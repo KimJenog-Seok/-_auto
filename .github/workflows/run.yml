@@ -1,0 +1,37 @@
+name: Run main2.py daily (KST)
+
+on:
+  schedule:
+    # 매일 06:00 KST = 매일 21:00 UTC (UTC는 KST-9시간)
+    # 수동 실행 테스트 후, 이 값을 0 21 * * * 로 변경합니다.
+    - cron: "30 5 * * *" 
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install selenium pandas gspread google-auth google-auth-oauthlib
+
+      - name: Run main2.py
+        env:
+          KEY1: ${{ secrets.KEY1 }}
+        run: |
+          python main2.py
