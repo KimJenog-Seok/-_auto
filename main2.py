@@ -40,7 +40,6 @@ WORKSHEET_NAME = "편성표RAW"
 def make_driver():
     """GitHub Actions/서버/로컬 공용 크롬 드라이버 (Headless)."""
     opts = webdriver.ChromeOptions()
-    # GitHub Actions에서는 Headless 모드를 사용해야 합니다.
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
@@ -74,7 +73,7 @@ def save_debug(driver, tag: str):
         print(f"[WARN] 디버그 저장 실패: {e}")
 
 # ------------------------------------------------------------
-# 로그인 + 세션 초과 팝업 처리 (기존 성공 코드 그대로 사용)
+# 로그인 + 세션 초과 팝업 처리 (기존 성공 코드)
 # ------------------------------------------------------------
 def login_and_handle_session(driver):
     driver.get("https://live.ecomm-data.com")
@@ -133,6 +132,7 @@ def login_and_handle_session(driver):
         raise RuntimeError("로그인 실패")
     print("✅ 로그인 성공 판정! 현재 URL:", curr)
     save_debug(driver, "login_success")
+
 
 # ------------------------------------------------------------
 # 편성표 페이지 크롤링
@@ -223,6 +223,7 @@ def gs_client_from_env():
     ]
     creds = Credentials.from_service_account_info(svc_info, scopes=scope)
     return gspread.authorize(creds)
+
 
 # ------------------------------------------------------------
 # 플랫폼 매핑 및 유틸
