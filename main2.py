@@ -27,12 +27,11 @@ ARTIFACT_DIR.mkdir(exist_ok=True)
 ECOMM_ID = "smt@trncompany.co.kr"
 ECOMM_PW = "sales4580!!"
 
-# 편성표 URL로 변경
-SCHEDULE_URL = "https://live.ecomm-data.com/schedule/hs"
+RANKING_URL = "https://live.ecomm-data.com/ranking?period=1&cid=&date="
 
 # 구글 시트 설정
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/19pcFwP2XOVEuHPsr9ITudLDSD1Tzg5RwsL3K6maIJ1U/edit?gid=0#gid=0"
-WORKSHEET_NAME = "편성표RAW"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1kravfzRDMhArlt-uqEYjMIn0BVCY4NtRZekswChLTzo/edit?usp=sharing"
+WORKSHEET_NAME = "홈쇼핑TOP100"
 
 # ------------------------------------------------------------
 # 유틸
@@ -73,7 +72,7 @@ def save_debug(driver, tag: str):
         print(f"[WARN] 디버그 저장 실패: {e}")
 
 # ------------------------------------------------------------
-# 로그인 + 세션 초과 팝업 처리 (기존 성공 코드)
+# 로그인 + 세션 초과 팝업 처리
 # ------------------------------------------------------------
 def login_and_handle_session(driver):
     driver.get("https://live.ecomm-data.com")
@@ -134,71 +133,35 @@ def login_and_handle_session(driver):
     save_debug(driver, "login_success")
 
 # ------------------------------------------------------------
-# 편성표 페이지 크롤링
+# 랭킹 페이지 크롤링
 # ------------------------------------------------------------
-def crawl_schedule(driver):
-    # '편성표' 메뉴 클릭
-    schedule_link = WebDriverWait(driver, WAIT).until(
-        EC.element_to_be_clickable((By.XPATH, "//a[contains(text(),'편성표')]"))
-    )
-    driver.execute_script("arguments[0].click();", schedule_link)
-    print("[STEP] '편성표' 메뉴 클릭 완료")
-    time.sleep(2)
-
-    # URL에 이미 홈쇼핑 구분값('/hs')이 있으므로, '홈쇼핑' 버튼 클릭 로직은 건너뜀
-    driver.get(SCHEDULE_URL)
-    print("✅ 편성표 홈쇼핑 페이지로 직접 이동 완료")
-    time.sleep(2)
-
-    # '하루 전 날짜' 클릭
-    KST = timezone(timedelta(hours=9))
-    yesterday = datetime.now(KST).date() - timedelta(days=1)
-    date_text = str(yesterday.day)
-    print(f"[STEP] 어제 날짜({yesterday.strftime('%Y-%m-%d')}) 선택 (UI 표시: '{date_text}')")
-
-    date_button_xpath = f"//div[text()='{date_text}']"
-    date_button = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, date_button_xpath))
-    )
-    driver.execute_script("arguments[0].click();", date_button)
-    print("✅ '하루 전 날짜' 클릭 완료")
+def crawl_ranking(driver):
+    driver.get(RANKING_URL)
     time.sleep(3)
+    table = driver.find_element(By.TAG_NAME, "table")
+    tbody = table.find_element(By.TAG_NAME, "tbody")
+    rows = tbody.find_elements(By.TAG_NAME, "tr")
 
-    # 데이터 크롤링 (모든 테이블에서 데이터 추출)
-    tables = WebDriverWait(driver, 10).until(
-        EC.presence_of_all_elements_located((By.TAG_NAME, "table"))
-    )
+    data = []
+    for row in rows:
+        cols = row.find_elements(By.TAG_NAME, "td")
+        if len(cols) >= 8:
+            item = {
+                "랭킹":   cols[0].text.strip(),
+                "방송정보": cols[1].text.strip(),
+                "분류":   cols[2].text.strip(),
+                "방송시간": cols[3].text.strip(),
+                "시청률":  cols[4].text.strip(),
+                "판매량":  cols[5].text.strip(),
+                "매출액":  cols[6].text.strip(),
+                "상품수":  cols[7].text.strip(),
+            }
+            data.append(item)
 
-    all_data = []
-    columns = ['방송시간', '방송정보', '분류', '판매량', '매출액', '상품수']
-
-    for table in tables:
-        try:
-            tbody = table.find_element(By.TAG_NAME, "tbody")
-            rows = tbody.find_elements(By.TAG_NAME, "tr")
-            for row in rows:
-                cols = row.find_elements(By.TAG_NAME, "td")
-                
-                if len(cols) >= 7:
-                    item = {
-                        "방송시간": cols[1].text.strip(),
-                        "방송정보": cols[2].text.strip(),
-                        "분류":   cols[3].text.strip(),
-                        "판매량":  cols[4].text.strip(),
-                        "매출액":  cols[5].text.strip(),
-                        "상품수":  cols[6].text.strip()
-                    }
-                    all_data.append(item)
-                else:
-                    print(f"[WARN] 불완전한 데이터 행 발견 (열 개수: {len(cols)})")
-                    continue
-        except Exception as e:
-            print(f"[WARN] 테이블 처리 중 오류 발생 (무시): {e}")
-            continue
-
-    df = pd.DataFrame(all_data, columns=columns)
+    columns = ["랭킹","방송정보","분류","방송시간","시청률","판매량","매출액","상품수"]
+    df = pd.DataFrame(data, columns=columns)
     print(df.head())
-    print(f"총 {len(df)}개 편성표 정보 추출 완료")
+    print(f"총 {len(df)}개 상품 정보 추출 완료")
     return df
 
 # ------------------------------------------------------------
@@ -237,7 +200,7 @@ def make_yesterday_title_kst():
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).date()
     yday = today - timedelta(days=1)
-    return f"{yday.month}/{yday.day}"
+    return f"{yday.month}/{yday.day}"  # 예: "9/10"
 
 def unique_sheet_title(sh, base):
     title = base; n = 1
@@ -314,101 +277,23 @@ def _format_df_table(df):
     d["판매량합"] = d["판매량합"].apply(format_num)
     return [d.columns.tolist()] + d.astype(str).values.tolist()
 
-# ------------------------------------------------------------
-# 구글 시트 서식 지정
-# ------------------------------------------------------------
-def apply_formatting(sh, new_ws, ins_ws):
-    try:
-        reqs = []
+def _norm_text(s: str) -> str:
+    if s is None: return ""
+    t = str(s).replace("\n"," ").replace("\r"," ").replace("\t"," ")
+    t = re.sub(r"[·/【】\[\]\(\)]", " ", t)
+    return re.sub(r"\s+"," ", t).strip()
 
-        # 1. '어제 날짜' 시트 서식
-        row_count = new_ws.row_count
-        col_count = new_ws.col_count # 현재 9개 열 (0-8)
-
-        # 전체 셀에 테두리
-        reqs.append({
-            "updateBorders": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
-                "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"},
-                "left": {"style": "SOLID"}, "right": {"style": "SOLID"},
-                "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"},
-            }
-        })
-        
-        # 열 너비 설정: C열 600, H열 130, I열 130, 나머지 100
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": col_count},
-                "properties": {"pixelSize": 100},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3},
-                "properties": {"pixelSize": 600},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 9}, # H, I열 포함
-                "properties": {"pixelSize": 130},
-                "fields": "pixelSize"
-            }
-        })
-        
-        # 정렬 설정: C1 제외 왼쪽 정렬, 나머지 가운데 정렬
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 2, "endColumnIndex": 3},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": 2},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count}, # 모든 열 포함
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
-        # 헤더 배경색
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
-                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
-            }
-        })
-        
-        # 2. 'INS_전일' 시트 서식
-        # ... (이하 동일) ...
-        
-        sh.batch_update({"requests": reqs})
-        print("✅ 서식 적용 완료")
-    except Exception as e:
-        print("⚠️ 서식 적용 실패:", e)
+def _make_key(df):
+    for c in ["방송정보","회사명"]:
+        if c not in df.columns: df[c] = ""
+    a = df["방송정보"].apply(_norm_text).astype(str)
+    b = df["회사명"].apply(_norm_text).astype(str)
+    return a + "||" + b
 
 # ------------------------------------------------------------
 # 메인
 # ------------------------------------------------------------
 def main():
-    # 로컬 테스트용 KEY1 환경 변수 설정
-    key_path = Path("C:/key/composed-apogee-442305-k5-b134efa6db1c.json")
-    if key_path.exists() and not os.environ.get("KEY1"):
-        with open(key_path, "rb") as f:
-            json_bytes = f.read()
-            os.environ["KEY1"] = base64.b64encode(json_bytes).decode("utf-8")
-            print("✅ 로컬 테스트용 KEY1 환경 변수 설정 완료")
-
     driver = make_driver()
     sh = None
     worksheet = None
@@ -417,33 +302,20 @@ def main():
         # 1) 로그인 + 세션 팝업 처리
         login_and_handle_session(driver)
 
-        # 2) 편성표 페이지 크롤링
-        df = crawl_schedule(driver)
-
-        # --- 방송시간 분리 로직 ---
-        split_result = df['방송시간'].str.split('\n', n=1, expand=True)
-        if len(split_result.columns) == 2:
-            df['방송날짜'] = split_result[0].str.strip()
-            df['방송시작시간'] = split_result[1].str.strip()
-        else:
-            df['방송날짜'] = split_result[0].str.strip()
-            df['방송시작시간'] = ''
-        df = df.drop(columns=['방송시간'])
-        new_columns = ['방송날짜', '방송시작시간', '방송정보', '분류', '판매량', '매출액', '상품수']
-        df = df[new_columns]
-        # --- 방송시간 분리 로직 끝 ---
+        # 2) 랭킹 페이지 크롤링
+        df = crawl_ranking(driver)
 
         # 3) 구글 시트 인증
         gc = gs_client_from_env()
         sh = gc.open_by_url(SPREADSHEET_URL)
         print("[GS] 스프레드시트 열기 OK")
 
-        # 4) '편성표RAW' 시트 확보(없으면 생성)
+        # 4) '홈쇼핑TOP100' 시트 확보(없으면 생성)
         try:
             worksheet = sh.worksheet(WORKSHEET_NAME)
             print("[GS] 기존 워크시트 찾음:", WORKSHEET_NAME)
         except gspread.exceptions.WorksheetNotFound:
-            worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(new_columns))
+            worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=8)
             print("[GS] 워크시트 생성:", WORKSHEET_NAME)
 
         # 5) 메인 시트 업로드
@@ -452,8 +324,8 @@ def main():
         worksheet.update(values=data_to_upload, range_name="A1")
         print(f"✅ 구글시트 업로드 완료 (행수: {len(data_to_upload)})")
 
-        # 6) 어제 날짜 새 시트 생성 & 값 복사
-        base_title = make_yesterday_title_kst()
+        # 6) 어제 날짜 새 시트 생성 & 값 복사 (반드시 생성되도록 가드)
+        base_title = make_yesterday_title_kst()     # 예: "9/10"
         target_title = unique_sheet_title(sh, base_title)
         source_values = worksheet.get_all_values() or [[""]]
         rows_cnt = max(2, len(source_values))
@@ -470,22 +342,143 @@ def main():
         final_rows = []
         for r in data_rows:
             padded = r + [""] * (len(header) - len(r))
-            broadcast = padded[2].strip() if len(padded) > 2 else ""
+            broadcast = padded[1].strip() if len(padded) > 1 else ""
             cleaned, company, gubun = split_company_from_broadcast(broadcast)
-            if len(padded) > 2:
-                padded[2] = cleaned
+            if len(padded) > 1:
+                padded[1] = cleaned
             final_rows.append(padded + [company, gubun])
         final_data = [final_header] + final_rows
         new_ws.clear()
         new_ws.update("A1", final_data)
         print("✅ 방송정보 말미 회사명 제거 + 회사명/홈쇼핑구분 열 추가 완료")
+        
+        # 새로운 열이 추가된 후 2초 대기
+        time.sleep(2)
 
-        # 8) 집계 시트 생성
+        # 8) 어제 시트 표 서식 지정 (A1:J101)
+        import traceback
+        try:
+            reqs = [
+                # 1) A1:J101 모든 방향 테두리
+                {
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "startRowIndex": 0,   # A1 시작
+                            "endRowIndex": 101,   # 101행까지
+                            "startColumnIndex": 0,# A열 시작
+                            "endColumnIndex": 10  # J열(0-based 10) 직전 인덱스
+                        },
+                        "top":    {"style": "SOLID"},
+                        "bottom": {"style": "SOLID"},
+                        "left":   {"style": "SOLID"},
+                        "right":  {"style": "SOLID"},
+                        "innerHorizontal": {"style": "SOLID"},
+                        "innerVertical":   {"style": "SOLID"},
+                    }
+                },
+                # 2) 헤더 A1:J1 가운데 정렬 + 회색 배경
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 10
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,backgroundColor)"
+                    }
+                },
+                # 3) A2:A101 가운데 정렬
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "startRowIndex": 1,
+                            "endRowIndex": 101,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 1
+                        },
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                        "fields": "userEnteredFormat.horizontalAlignment"
+                    }
+                },
+                # 3-2) C1:J101 가운데 정렬 (헤더 포함 C~J 전 범위)
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 101,
+                            "startColumnIndex": 2,  # C열
+                            "endColumnIndex": 10    # J열(0-based 10)
+                        },
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                        "fields": "userEnteredFormat.horizontalAlignment"
+                    }
+                },
+                # 4) B2:B101 왼쪽 정렬
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "startRowIndex": 1,
+                            "endRowIndex": 101,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 2
+                        },
+                        "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+                        "fields": "userEnteredFormat.horizontalAlignment"
+                    }
+                },
+                # 5) B열 전체 열폭 650px
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "dimension": "COLUMNS",
+                            "startIndex": 1,  # B열
+                            "endIndex": 2
+                        },
+                        "properties": { "pixelSize": 650 },
+                        "fields": "pixelSize"
+                    }
+                },
+                # 6) I열 전체 열폭 120px
+                {
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": new_ws.id,
+                            "dimension": "COLUMNS",
+                            "startIndex": 8,  # I열
+                            "endIndex": 9
+                        },
+                        "properties": { "pixelSize": 120 },
+                        "fields": "pixelSize"
+                    }
+                }
+            ]
+            sh.batch_update({"requests": reqs})
+            print("✅ 어제 시트 서식 지정 완료 (A1:J101 + B열 650px)")
+        except Exception as e:
+            print("⚠️ 어제 시트 서식 지정 실패:", traceback.format_exc())
+
+
+
+        # 9) INS_전일 생성/갱신
         values = new_ws.get_all_values() or [[""]]
         if not values or len(values) < 2:
             raise Exception("INS_전일 생성 실패: 데이터 행이 없습니다.")
         header = values[0]; body = values[1:]
         df_ins = pd.DataFrame(body, columns=header)
+
         for col in ["판매량","매출액","홈쇼핑구분","회사명","분류"]:
             if col not in df_ins.columns: df_ins[col] = ""
         df_ins["판매량_int"] = df_ins["판매량"].apply(_to_int_kor)
@@ -494,10 +487,84 @@ def main():
         gubun_tbl = _agg_two(df_ins, ["홈쇼핑구분"])
         plat_tbl  = _agg_two(df_ins, ["회사명"])
         cat_tbl   = _agg_two(df_ins, ["분류"])
+
         sheet_data = []
         sheet_data.append(["[LIVE/TC 집계]"]); sheet_data += _format_df_table(gubun_tbl); sheet_data.append([""])
         sheet_data.append(["[플랫폼(회사명) 집계]"]); sheet_data += _format_df_table(plat_tbl); sheet_data.append([""])
         sheet_data.append(["[상품분류(분류) 집계]"]); sheet_data += _format_df_table(cat_tbl)
+
+        # 신규 진입 상품 (최신 날짜 vs 과거 전체)
+        def _norm_text(s: str) -> str:
+            if s is None: return ""
+            t = str(s).replace("\n"," ").replace("\r"," ").replace("\t"," ")
+            t = re.sub(r"[·/【】\[\]\(\)]", " ", t)
+            return re.sub(r"\s+"," ", t).strip()
+
+        def _make_key(df):
+            for c in ["방송정보","회사명"]:
+                if c not in df.columns: df[c] = ""
+            a = df["방송정보"].apply(_norm_text).astype(str)
+            b = df["회사명"].apply(_norm_text).astype(str)
+            return a + "||" + b
+
+        all_ws_objs = sh.worksheets()
+        date_ws_objs = [w for w in all_ws_objs if re.match(r"^\d{1,2}/\d{1,2}(-\d+)?$", w.title)]
+
+        if date_ws_objs:
+            def _parse_md_suffix(title: str):
+                base = title.split("-")[0]
+                m, d = map(int, base.split("/"))
+                suf = 1
+                mobj = re.search(r"-(\d+)$", title)
+                if mobj: suf = int(mobj.group(1))
+                return (m, d, suf)
+
+            latest_ws_obj = max(date_ws_objs, key=lambda w: _parse_md_suffix(w.title))
+            latest_title = latest_ws_obj.title
+
+            latest_vals = latest_ws_obj.get_all_values() or [[""]]
+            latest_header = latest_vals[0] if latest_vals else []
+            latest_df = pd.DataFrame(latest_vals[1:], columns=latest_header) if len(latest_vals) >= 2 else pd.DataFrame(columns=["방송정보","회사명","분류","판매량","매출액"])
+            for c in ["방송정보","회사명","분류","판매량","매출액"]:
+                if c not in latest_df.columns: latest_df[c] = ""
+            latest_df = latest_df.fillna("")
+            latest_df["__KEY__"] = _make_key(latest_df)
+            latest_keys = set(latest_df["__KEY__"])
+
+            hist_keys = set()
+            for w in date_ws_objs:
+                if w.id == latest_ws_obj.id:
+                    continue
+                prev_vals = w.get_all_values() or [[""]]
+                if not prev_vals or len(prev_vals) < 2:
+                    continue
+                prev_df = pd.DataFrame(prev_vals[1:], columns=prev_vals[0])
+                for c in ["방송정보","회사명"]:
+                    if c not in prev_df.columns: prev_df[c] = ""
+                prev_df = prev_df.fillna("")
+                hist_keys |= set(_make_key(prev_df))
+
+            new_keys = latest_keys - hist_keys
+            new_items = latest_df[latest_df["__KEY__"].isin(new_keys)].copy()
+            new_items["판매량"] = new_items["판매량"].apply(_to_int_kor).apply(format_num)
+            new_items["매출액"] = new_items["매출액"].apply(_to_int_kor).apply(format_sales)
+
+            sheet_data.append([""])
+            sheet_data.append([f"[신규 진입 상품] ({latest_title} 기준)"])
+            new_table = [["방송정보","회사명","분류","판매량","매출액"]]
+            if len(new_items) == 0:
+                new_table.append(["(신규 진입 없음)", "", "", "", ""])
+            else:
+                tmp = new_items.copy()
+                tmp["__매출액_int"] = tmp["매출액"].apply(_to_int_kor)
+                tmp = tmp.sort_values("__매출액_int", ascending=False)
+                new_table += tmp[["방송정보","회사명","분류","판매량","매출액"]].astype(str).values.tolist()
+            sheet_data += new_table
+        else:
+            sheet_data.append([""])
+            sheet_data.append(["[신규 진입 상품] (날짜 시트 없음)"])
+            sheet_data += [["방송정보","회사명","분류","판매량","매출액"],
+                           ["(비교 불가)", "", "", "", ""]]
 
         # INS_전일 upsert
         TARGET_TITLE = "INS_전일"
@@ -514,11 +581,7 @@ def main():
         ins_ws.update("A1", sheet_data)
         print("✅ INS_전일 생성/갱신 완료")
 
-        # --- 서식 적용 함수 호출 (위치 변경) ---
-        apply_formatting(sh, new_ws, ins_ws)
-        # --- 서식 적용 함수 호출 끝 ---
-
-        # 9) 탭 순서 재배치: INS_전일 1번째, 어제시트 2번째
+        # 10) 탭 순서 재배치: INS_전일 1번째, 어제시트 2번째
         try:
             all_ws_now = sh.worksheets()
             new_order = [ins_ws]
@@ -533,6 +596,7 @@ def main():
             print("⚠️ 시트 순서 재배치 오류:", e)
 
         print("🎉 전체 파이프라인 완료")
+
     except Exception as e:
         import traceback
         print("❌ 전체 자동화 과정 중 에러 발생:", e)
