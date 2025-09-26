@@ -76,13 +76,18 @@ def save_debug(driver, tag: str):
     except Exception as e:
         print(f"[WARN] 디버그 저장 실패: {e}")
 
-
 # ------------------------------------------------------------
 # 로그인 + 세션 초과 팝업 처리
 # ------------------------------------------------------------
 def login_and_handle_session(driver):
-    driver.get(LOGIN_URL)
-    print("[STEP] 로그인 페이지 진입 완료")
+    driver.get("https://live.ecomm-data.com")
+    print("[STEP] 메인 페이지 진입 완료")
+
+    login_link = WebDriverWait(driver, WAIT).until(
+        EC.element_to_be_clickable((By.LINK_TEXT, "로그인"))
+    )
+    driver.execute_script("arguments[0].click();", login_link)
+    print("[STEP] 로그인 링크 클릭 완료")
 
     t0 = time.time()
     while "/user/sign_in" not in driver.current_url:
@@ -93,11 +98,9 @@ def login_and_handle_session(driver):
 
     time.sleep(1)
     email_input = [e for e in driver.find_elements(By.CSS_SELECTOR, "input[name='email']") if e.is_displayed()][0]
-    pw_input = [e for e in driver.find_elements(By.CSS_SELECTOR, "input[name='password']") if e.is_displayed()][0]
-    email_input.clear();
-    email_input.send_keys(ECOMM_ID)
-    pw_input.clear();
-    pw_input.send_keys(ECOMM_PW)
+    pw_input    = [e for e in driver.find_elements(By.CSS_SELECTOR, "input[name='password']") if e.is_displayed()][0]
+    email_input.clear(); email_input.send_keys(ECOMM_ID)
+    pw_input.clear(); pw_input.send_keys(ECOMM_PW)
     time.sleep(0.5)
 
     form = driver.find_element(By.TAG_NAME, "form")
@@ -485,5 +488,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
