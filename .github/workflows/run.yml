@@ -2,8 +2,8 @@ name: Run main2.py daily (KST)
 
 on:
   schedule:
-    # 매일 06:00 KST = 매일 21:00 UTC
-    - cron: "45 8 * * *"
+    # 매일 06:30 KST = 매일 21:30 UTC
+    - cron: "30 21 * * *"
   workflow_dispatch:
 
 jobs:
