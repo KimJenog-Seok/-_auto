@@ -408,7 +408,7 @@ def main():
             json_bytes = f.read()
             os.environ["KEY1"] = base64.b64encode(json_bytes).decode("utf-8")
             print("✅ 로컬 테스트용 KEY1 환경 변수 설정 완료")
-    
+
     driver = make_driver()
     sh = None
     worksheet = None
@@ -419,19 +419,16 @@ def main():
 
         # 2) 편성표 페이지 크롤링
         df = crawl_schedule(driver)
-        
+
         # --- 방송시간 분리 로직 ---
         split_result = df['방송시간'].str.split('\n', n=1, expand=True)
-
         if len(split_result.columns) == 2:
             df['방송날짜'] = split_result[0].str.strip()
             df['방송시작시간'] = split_result[1].str.strip()
         else:
             df['방송날짜'] = split_result[0].str.strip()
             df['방송시작시간'] = ''
-
         df = df.drop(columns=['방송시간'])
-
         new_columns = ['방송날짜', '방송시작시간', '방송정보', '분류', '판매량', '매출액', '상품수']
         df = df[new_columns]
         # --- 방송시간 분리 로직 끝 ---
@@ -448,7 +445,7 @@ def main():
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(new_columns))
             print("[GS] 워크시트 생성:", WORKSHEET_NAME)
-        
+
         # 5) 메인 시트 업로드
         data_to_upload = [df.columns.tolist()] + df.astype(str).values.tolist()
         worksheet.clear()
@@ -464,7 +461,7 @@ def main():
         new_ws = sh.add_worksheet(title=target_title, rows=rows_cnt, cols=cols_cnt)
         new_ws.update("A1", source_values)
         print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title}")
-        
+
         # 7) 방송정보 말미 회사명 제거 + 회사명/구분 열 추가
         values = new_ws.get_all_values() or [[""]]
         header = values[0] if values else []
@@ -493,7 +490,7 @@ def main():
             if col not in df_ins.columns: df_ins[col] = ""
         df_ins["판매량_int"] = df_ins["판매량"].apply(_to_int_kor)
         df_ins["매출액_int"] = df_ins["매출액"].apply(_to_int_kor)
-        
+
         gubun_tbl = _agg_two(df_ins, ["홈쇼핑구분"])
         plat_tbl  = _agg_two(df_ins, ["회사명"])
         cat_tbl   = _agg_two(df_ins, ["분류"])
@@ -501,7 +498,7 @@ def main():
         sheet_data.append(["[LIVE/TC 집계]"]); sheet_data += _format_df_table(gubun_tbl); sheet_data.append([""])
         sheet_data.append(["[플랫폼(회사명) 집계]"]); sheet_data += _format_df_table(plat_tbl); sheet_data.append([""])
         sheet_data.append(["[상품분류(분류) 집계]"]); sheet_data += _format_df_table(cat_tbl)
-        
+
         # INS_전일 upsert
         TARGET_TITLE = "INS_전일"
         try:
@@ -513,11 +510,11 @@ def main():
             cols_cnt = max(2, max(len(r) for r in sheet_data))
             ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=rows_cnt, cols=cols_cnt)
             print("[GS] INS_전일 워크시트 생성")
-        
+
         ins_ws.update("A1", sheet_data)
         print("✅ INS_전일 생성/갱신 완료")
-        
-        # --- 서식 적용 함수 호출 ---
+
+        # --- 서식 적용 함수 호출 (위치 변경) ---
         apply_formatting(sh, new_ws, ins_ws)
         # --- 서식 적용 함수 호출 끝 ---
 
@@ -546,4 +543,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
