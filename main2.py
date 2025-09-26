@@ -36,14 +36,14 @@ SCHEDULE_URL = "https://live.ecomm-data.com/schedule/hs"
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/19pcFwP2XOVEuHPsr9ITudLDSD1Tzg5RwsL3K6maIJ1U/edit?gid=0#gid=0"
 WORKSHEET_NAME = "편성표RAW"
 
-
 # ------------------------------------------------------------
 # 유틸
 # ------------------------------------------------------------
 def make_driver():
     """GitHub Actions/서버/로컬 공용 크롬 드라이버 (Headless)."""
     opts = webdriver.ChromeOptions()
-    # opts.add_argument("--headless=new")
+    # GitHub Actions에서는 Headless 모드를 사용해야 합니다.
+    opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
@@ -485,4 +485,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
