@@ -27,8 +27,6 @@ ARTIFACT_DIR.mkdir(exist_ok=True)
 ECOMM_ID = "smt@trncompany.co.kr"
 ECOMM_PW = "sales4580!!"
 
-# 로그인 URL 추가
-LOGIN_URL = "https://live.ecomm-data.com/user/sign_in"
 # 편성표 URL로 변경
 SCHEDULE_URL = "https://live.ecomm-data.com/schedule/hs"
 
@@ -63,7 +61,6 @@ def make_driver():
     driver.set_page_load_timeout(60)
     return driver
 
-
 def save_debug(driver, tag: str):
     ts = int(time.time())
     png = ARTIFACT_DIR / f"{ts}_{tag}.png"
@@ -77,7 +74,7 @@ def save_debug(driver, tag: str):
         print(f"[WARN] 디버그 저장 실패: {e}")
 
 # ------------------------------------------------------------
-# 로그인 + 세션 초과 팝업 처리
+# 로그인 + 세션 초과 팝업 처리 (기존 성공 코드 그대로 사용)
 # ------------------------------------------------------------
 def login_and_handle_session(driver):
     driver.get("https://live.ecomm-data.com")
@@ -137,7 +134,6 @@ def login_and_handle_session(driver):
     print("✅ 로그인 성공 판정! 현재 URL:", curr)
     save_debug(driver, "login_success")
 
-
 # ------------------------------------------------------------
 # 편성표 페이지 크롤링
 # ------------------------------------------------------------
@@ -183,16 +179,16 @@ def crawl_schedule(driver):
             rows = tbody.find_elements(By.TAG_NAME, "tr")
             for row in rows:
                 cols = row.find_elements(By.TAG_NAME, "td")
-
+                
                 # 데이터가 7개일 경우를 기준으로 추출합니다.
                 if len(cols) >= 7:
                     item = {
                         "방송시간": cols[1].text.strip(),
                         "방송정보": cols[2].text.strip(),
-                        "분류": cols[3].text.strip(),
-                        "판매량": cols[4].text.strip(),
-                        "매출액": cols[5].text.strip(),
-                        "상품수": cols[6].text.strip()
+                        "분류":   cols[3].text.strip(),
+                        "판매량":  cols[4].text.strip(),
+                        "매출액":  cols[5].text.strip(),
+                        "상품수":  cols[6].text.strip()
                     }
                     all_data.append(item)
                 else:
@@ -206,7 +202,6 @@ def crawl_schedule(driver):
     print(df.head())
     print(f"총 {len(df)}개 편성표 정보 추출 완료")
     return df
-
 
 # ------------------------------------------------------------
 # Google Sheets 인증 (KEY1: Base64 JSON)
@@ -229,18 +224,16 @@ def gs_client_from_env():
     creds = Credentials.from_service_account_info(svc_info, scopes=scope)
     return gspread.authorize(creds)
 
-
 # ------------------------------------------------------------
 # 플랫폼 매핑 및 유틸
 # ------------------------------------------------------------
 PLATFORM_MAP = {
-    "CJ온스타일": "Live", "CJ온스타일 플러스": "TC", "GS홈쇼핑": "Live", "GS홈쇼핑 마이샵": "TC",
-    "KT알파쇼핑": "TC", "NS홈쇼핑": "Live", "NS홈쇼핑 샵플러스": "TC", "SK스토아": "TC",
-    "공영쇼핑": "Live", "롯데원티비": "TC", "롯데홈쇼핑": "Live", "쇼핑엔티": "TC",
-    "신세계쇼핑": "TC", "현대홈쇼핑": "Live", "현대홈쇼핑 플러스샵": "TC", "홈앤쇼핑": "Live",
+    "CJ온스타일":"Live","CJ온스타일 플러스":"TC","GS홈쇼핑":"Live","GS홈쇼핑 마이샵":"TC",
+    "KT알파쇼핑":"TC","NS홈쇼핑":"Live","NS홈쇼핑 샵플러스":"TC","SK스토아":"TC",
+    "공영쇼핑":"Live","롯데원티비":"TC","롯데홈쇼핑":"Live","쇼핑엔티":"TC",
+    "신세계쇼핑":"TC","현대홈쇼핑":"Live","현대홈쇼핑 플러스샵":"TC","홈앤쇼핑":"Live",
 }
 PLATFORMS_BY_LEN = sorted(PLATFORM_MAP.keys(), key=len, reverse=True)
-
 
 def make_yesterday_title_kst():
     KST = timezone(timedelta(hours=9))
@@ -248,18 +241,14 @@ def make_yesterday_title_kst():
     yday = today - timedelta(days=1)
     return f"{yday.month}/{yday.day}"
 
-
 def unique_sheet_title(sh, base):
-    title = base;
-    n = 1
+    title = base; n = 1
     while True:
         try:
             sh.worksheet(title)
-            n += 1;
-            title = f"{base}-{n}"
+            n += 1; title = f"{base}-{n}"
         except gspread.exceptions.WorksheetNotFound:
             return title
-
 
 def split_company_from_broadcast(text):
     if not text:
@@ -271,7 +260,6 @@ def split_company_from_broadcast(text):
             cleaned = re.sub(pattern, "", t).rstrip()
             return cleaned, key, PLATFORM_MAP[key]
     return text, "", ""
-
 
 def _to_int_kor(s):
     if s is None:
@@ -286,21 +274,16 @@ def _to_int_kor(s):
     m = re.fullmatch(r"(-?\d+(?:\.\d+)?)(억|만)", t)
     if m:
         return int(float(m.group(1)) * unit_map[m.group(2)])
-    total = 0;
-    rest = t
+    total = 0; rest = t
     if "억" in rest:
         parts = rest.split("억")
-        try:
-            total += int(float(parts[0]) * unit_map["억"])
-        except:
-            pass
+        try: total += int(float(parts[0]) * unit_map["억"])
+        except: pass
         rest = parts[1] if len(parts) > 1 else ""
     if "만" in rest:
         parts = rest.split("만")
-        try:
-            total += int(float(parts[0]) * unit_map["만"])
-        except:
-            pass
+        try: total += int(float(parts[0]) * unit_map["만"])
+        except: pass
         rest = parts[1] if len(parts) > 1 else ""
     if re.fullmatch(r"-?\d+", rest):
         total += int(rest)
@@ -309,31 +292,23 @@ def _to_int_kor(s):
         return int(nums[0]) if nums else 0
     return total
 
-
 def format_sales(v):
-    try:
-        v = int(v)
-    except:
-        return str(v)
-    return f"{v / 100_000_000:.2f}억"
-
+    try: v = int(v)
+    except: return str(v)
+    return f"{v/100_000_000:.2f}억"
 
 def format_num(v):
-    try:
-        v = int(v)
-    except:
-        return str(v)
+    try: v = int(v)
+    except: return str(v)
     return f"{v:,}"
-
 
 def _agg_two(df, group_cols):
     g = (df.groupby(group_cols, dropna=False)
-         .agg(매출합=("매출액_int", "sum"),
-              판매량합=("판매량_int", "sum"))
-         .reset_index()
-         .sort_values("매출합", ascending=False))
+            .agg(매출합=("매출액_int","sum"),
+                 판매량합=("판매량_int","sum"))
+            .reset_index()
+            .sort_values("매출합", ascending=False))
     return g
-
 
 def _format_df_table(df):
     d = df.copy()
@@ -352,7 +327,7 @@ def main():
             json_bytes = f.read()
             os.environ["KEY1"] = base64.b64encode(json_bytes).decode("utf-8")
             print("✅ 로컬 테스트용 KEY1 환경 변수 설정 완료")
-
+    
     driver = make_driver()
     sh = None
     worksheet = None
@@ -363,7 +338,7 @@ def main():
 
         # 2) 편성표 페이지 크롤링
         df = crawl_schedule(driver)
-
+        
         # --- 방송시간 분리 로직 수정 ---
         split_result = df['방송시간'].str.split('\n', n=1, expand=True)
 
@@ -392,7 +367,7 @@ def main():
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(new_columns))
             print("[GS] 워크시트 생성:", WORKSHEET_NAME)
-
+        
         # 5) 메인 시트 업로드
         data_to_upload = [df.columns.tolist()] + df.astype(str).values.tolist()
         worksheet.clear()
@@ -408,12 +383,12 @@ def main():
         new_ws = sh.add_worksheet(title=target_title, rows=rows_cnt, cols=cols_cnt)
         new_ws.update("A1", source_values)
         print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title}")
-
+        
         # 7) 방송정보 말미 회사명 제거 + 회사명/구분 열 추가
         values = new_ws.get_all_values() or [[""]]
         header = values[0] if values else []
         data_rows = values[1:] if len(values) >= 2 else []
-
+        
         final_header = header + ["회사명", "홈쇼핑구분"]
         final_rows = []
         for r in data_rows:
@@ -438,7 +413,7 @@ def main():
             if col not in df_ins.columns: df_ins[col] = ""
         df_ins["판매량_int"] = df_ins["판매량"].apply(_to_int_kor)
         df_ins["매출액_int"] = df_ins["매출액"].apply(_to_int_kor)
-
+        
         gubun_tbl = _agg_two(df_ins, ["홈쇼핑구분"])
         plat_tbl  = _agg_two(df_ins, ["회사명"])
         cat_tbl   = _agg_two(df_ins, ["분류"])
@@ -447,7 +422,7 @@ def main():
         sheet_data.append(["[LIVE/TC 집계]"]); sheet_data += _format_df_table(gubun_tbl); sheet_data.append([""])
         sheet_data.append(["[플랫폼(회사명) 집계]"]); sheet_data += _format_df_table(plat_tbl); sheet_data.append([""])
         sheet_data.append(["[상품분류(분류) 집계]"]); sheet_data += _format_df_table(cat_tbl)
-
+        
         # INS_전일 upsert
         TARGET_TITLE = "INS_전일"
         try:
@@ -459,7 +434,7 @@ def main():
             cols_cnt = max(2, max(len(r) for r in sheet_data))
             ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=rows_cnt, cols=cols_cnt)
             print("[GS] INS_전일 워크시트 생성")
-
+        
         ins_ws.update("A1", sheet_data)
         print("✅ INS_전일 생성/갱신 완료")
 
@@ -488,6 +463,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
