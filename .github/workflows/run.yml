@@ -4,7 +4,7 @@ on:
   schedule:
     # 매일 06:00 KST = 매일 21:00 UTC (UTC는 KST-9시간)
     # 수동 실행 테스트 후, 이 값을 0 21 * * * 로 변경합니다.
-    - cron: "30 5 * * *" 
+    - cron: "0 8 * * *" 
   workflow_dispatch:
 
 jobs:
