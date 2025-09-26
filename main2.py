@@ -133,7 +133,6 @@ def login_and_handle_session(driver):
     print("✅ 로그인 성공 판정! 현재 URL:", curr)
     save_debug(driver, "login_success")
 
-
 # ------------------------------------------------------------
 # 편성표 페이지 크롤링
 # ------------------------------------------------------------
@@ -180,7 +179,6 @@ def crawl_schedule(driver):
             for row in rows:
                 cols = row.find_elements(By.TAG_NAME, "td")
                 
-                # 데이터가 7개일 경우를 기준으로 추출합니다.
                 if len(cols) >= 7:
                     item = {
                         "방송시간": cols[1].text.strip(),
@@ -223,7 +221,6 @@ def gs_client_from_env():
     ]
     creds = Credentials.from_service_account_info(svc_info, scopes=scope)
     return gspread.authorize(creds)
-
 
 # ------------------------------------------------------------
 # 플랫폼 매핑 및 유틸
@@ -318,6 +315,117 @@ def _format_df_table(df):
     return [d.columns.tolist()] + d.astype(str).values.tolist()
 
 # ------------------------------------------------------------
+# 구글 시트 서식 지정
+# ------------------------------------------------------------
+def apply_formatting(sh, new_ws, ins_ws):
+    try:
+        reqs = []
+
+        # 1. '어제 날짜' 시트 서식
+        row_count = new_ws.row_count
+        col_count = new_ws.col_count
+
+        # 전체 셀에 테두리
+        reqs.append({
+            "updateBorders": {
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
+                "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"},
+                "left": {"style": "SOLID"}, "right": {"style": "SOLID"},
+                "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"},
+            }
+        })
+        
+        # 열 너비 설정: C열 600, H열 130, 나머지 100
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": col_count},
+                "properties": {"pixelSize": 100},
+                "fields": "pixelSize"
+            }
+        })
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3},
+                "properties": {"pixelSize": 600},
+                "fields": "pixelSize"
+            }
+        })
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 8},
+                "properties": {"pixelSize": 130},
+                "fields": "pixelSize"
+            }
+        })
+
+        # 정렬 설정: C1 제외 왼쪽 정렬, 나머지 가운데 정렬
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 2, "endColumnIndex": 3},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
+                "fields": "userEnteredFormat.horizontalAlignment"
+            }
+        })
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": 2},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.horizontalAlignment"
+            }
+        })
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.horizontalAlignment"
+            }
+        })
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
+                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
+            }
+        })
+
+
+        # 2. 'INS_전일' 시트 서식
+        # A2:C4, A7:C23, A26:C36에 테두리와 배경색/가운데 정렬 적용
+        
+        # 열 너비 설정: A열 300, B열 250, C열 250
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": ins_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
+                "properties": {"pixelSize": 300},
+                "fields": "pixelSize"
+            }
+        })
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": ins_ws.id, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 3},
+                "properties": {"pixelSize": 250},
+                "fields": "pixelSize"
+            }
+        })
+        
+        # A2:C4
+        reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 1, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 3}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
+        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
+        
+        # A7:C23
+        reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 6, "endRowIndex": 23, "startColumnIndex": 0, "endColumnIndex": 3}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
+        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 6, "endRowIndex": 7, "startColumnIndex": 0, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
+
+        # A26:C36
+        reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 36, "startColumnIndex": 0, "endColumnIndex": 3}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
+        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
+        
+        sh.batch_update({"requests": reqs})
+        print("✅ 서식 적용 완료")
+    except Exception as e:
+        print("⚠️ 서식 적용 실패:", e)
+
+# ------------------------------------------------------------
 # 메인
 # ------------------------------------------------------------
 def main():
@@ -340,14 +448,14 @@ def main():
         # 2) 편성표 페이지 크롤링
         df = crawl_schedule(driver)
         
-        # --- 방송시간 분리 로직 수정 ---
+        # --- 방송시간 분리 로직 ---
         split_result = df['방송시간'].str.split('\n', n=1, expand=True)
 
         if len(split_result.columns) == 2:
-            df['방송날짜'] = split_result[0]
-            df['방송시작시간'] = split_result[1]
+            df['방송날짜'] = split_result[0].str.strip()
+            df['방송시작시간'] = split_result[1].str.strip()
         else:
-            df['방송날짜'] = split_result[0]
+            df['방송날짜'] = split_result[0].str.strip()
             df['방송시작시간'] = ''
 
         df = df.drop(columns=['방송시간'])
@@ -375,7 +483,7 @@ def main():
         worksheet.update(values=data_to_upload, range_name="A1")
         print(f"✅ 구글시트 업로드 완료 (행수: {len(data_to_upload)})")
 
-        # 6) 어제 날짜 새 시트 생성 & 값 복사 (반드시 생성되도록 가드)
+        # 6) 어제 날짜 새 시트 생성 & 값 복사
         base_title = make_yesterday_title_kst()
         target_title = unique_sheet_title(sh, base_title)
         source_values = worksheet.get_all_values() or [[""]]
@@ -389,7 +497,6 @@ def main():
         values = new_ws.get_all_values() or [[""]]
         header = values[0] if values else []
         data_rows = values[1:] if len(values) >= 2 else []
-        
         final_header = header + ["회사명", "홈쇼핑구분"]
         final_rows = []
         for r in data_rows:
@@ -418,7 +525,6 @@ def main():
         gubun_tbl = _agg_two(df_ins, ["홈쇼핑구분"])
         plat_tbl  = _agg_two(df_ins, ["회사명"])
         cat_tbl   = _agg_two(df_ins, ["분류"])
-
         sheet_data = []
         sheet_data.append(["[LIVE/TC 집계]"]); sheet_data += _format_df_table(gubun_tbl); sheet_data.append([""])
         sheet_data.append(["[플랫폼(회사명) 집계]"]); sheet_data += _format_df_table(plat_tbl); sheet_data.append([""])
@@ -438,6 +544,10 @@ def main():
         
         ins_ws.update("A1", sheet_data)
         print("✅ INS_전일 생성/갱신 완료")
+        
+        # --- 서식 적용 함수 호출 ---
+        apply_formatting(sh, new_ws, ins_ws)
+        # --- 서식 적용 함수 호출 끝 ---
 
         # 9) 탭 순서 재배치: INS_전일 1번째, 어제시트 2번째
         try:
