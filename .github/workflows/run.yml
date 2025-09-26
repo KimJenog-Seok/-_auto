@@ -2,9 +2,8 @@ name: Run main2.py daily (KST)
 
 on:
   schedule:
-    # 매일 06:00 KST = 매일 21:00 UTC (UTC는 KST-9시간)
-    # 수동 실행 테스트 후, 이 값을 0 21 * * * 로 변경합니다.
-    - cron: "0 8 * * *" 
+    # 5분마다 실행되도록 임시 수정
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
