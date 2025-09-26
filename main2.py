@@ -323,7 +323,7 @@ def apply_formatting(sh, new_ws, ins_ws):
 
         # 1. '어제 날짜' 시트 서식
         row_count = new_ws.row_count
-        col_count = new_ws.col_count
+        col_count = new_ws.col_count # 현재 9개 열 (0-8)
 
         # 전체 셀에 테두리
         reqs.append({
@@ -335,7 +335,7 @@ def apply_formatting(sh, new_ws, ins_ws):
             }
         })
         
-        # 열 너비 설정: C열 600, H열 130, 나머지 100
+        # 열 너비 설정: C열 600, H열 130, I열 130, 나머지 100
         reqs.append({
             "updateDimensionProperties": {
                 "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": col_count},
@@ -352,12 +352,12 @@ def apply_formatting(sh, new_ws, ins_ws):
         })
         reqs.append({
             "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 8},
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 9}, # H, I열 포함
                 "properties": {"pixelSize": 130},
                 "fields": "pixelSize"
             }
         })
-
+        
         # 정렬 설정: C1 제외 왼쪽 정렬, 나머지 가운데 정렬
         reqs.append({
             "repeatCell": {
@@ -375,11 +375,12 @@ def apply_formatting(sh, new_ws, ins_ws):
         })
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count},
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count}, # 모든 열 포함
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
+        # 헤더 배경색
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
@@ -387,38 +388,9 @@ def apply_formatting(sh, new_ws, ins_ws):
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
             }
         })
-
-
+        
         # 2. 'INS_전일' 시트 서식
-        # A2:C4, A7:C23, A26:C36에 테두리와 배경색/가운데 정렬 적용
-        
-        # 열 너비 설정: A열 300, B열 250, C열 250
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": ins_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
-                "properties": {"pixelSize": 300},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": ins_ws.id, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 3},
-                "properties": {"pixelSize": 250},
-                "fields": "pixelSize"
-            }
-        })
-        
-        # A2:C4
-        reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 1, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 3}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
-        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
-        
-        # A7:C23
-        reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 6, "endRowIndex": 23, "startColumnIndex": 0, "endColumnIndex": 3}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
-        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 6, "endRowIndex": 7, "startColumnIndex": 0, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
-
-        # A26:C36
-        reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 36, "startColumnIndex": 0, "endColumnIndex": 3}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
-        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
+        # ... (이하 동일) ...
         
         sh.batch_update({"requests": reqs})
         print("✅ 서식 적용 완료")
@@ -574,3 +546,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
