@@ -402,6 +402,14 @@ def apply_formatting(sh, new_ws, ins_ws):
         ins_col_count = 3
         
         # 열 너비 설정: A열 300, B열 250, C열 250
+        # 모든 셀을 가운데 정렬
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": ins_ws.id, "startRowIndex": 0, "endRowIndex": ins_ws.row_count, "startColumnIndex": 0, "endColumnIndex": ins_ws.col_count},
+                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.horizontalAlignment"
+            }
+        })
         reqs.append({
             "updateDimensionProperties": {
                 "range": {"sheetId": ins_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": 1},
@@ -583,3 +591,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
