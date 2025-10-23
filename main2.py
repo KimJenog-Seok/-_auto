@@ -41,7 +41,7 @@ def make_driver():
     """GitHub Actions/서버/로컬 공용 크롬 드라이버 (Headless)."""
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
+    opts.add_JArgument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=1920,1080")
@@ -501,7 +501,7 @@ def preprocess_dataframe(df_raw, sh):
 
 
 # ------------------------------------------------------------
-# 구글 시트 서식 지정 (★ J:R열 서식 추가하여 수정 ★)
+# 구글 시트 서식 지정 (★ 'blue: 8.0' 오타 수정 ★)
 # ------------------------------------------------------------
 def apply_formatting(sh, new_ws, ins_ws):
     import traceback
@@ -683,7 +683,13 @@ def apply_formatting(sh, new_ws, ins_ws):
 
         # A26:C36
         reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 36, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
-        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
+        
+        # --- ★★★ 오타 수정된 부분 ★★★ ---
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, 
+            "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, # 8.0 -> 0.8
+            "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
+        }})
         
         sh.batch_update({"requests": reqs})
         print("✅ 서식 적용 완료 (J:R열 포함)")
