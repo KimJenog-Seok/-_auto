@@ -15,7 +15,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # ------------------------------------------------------------
-# 환경 설정 (원본 유지)
+# 환경 설정
 # ------------------------------------------------------------
 WAIT = 5
 ARTIFACT_DIR = Path("artifacts")
@@ -25,12 +25,11 @@ ECOMM_ID = "smt@trncompany.co.kr"
 ECOMM_PW = "sales4580!!"
 
 SCHEDULE_URL = "https://live.ecomm-data.com/schedule/hs"
-
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/19pcFwP2XOVEuHPsr9ITudLDSD1Tzg5RwsL3K6maIJ1U/edit?gid=0#gid=0"
 WORKSHEET_NAME = "편성표RAW"
 
 # ------------------------------------------------------------
-# 유틸 (원본 유지)
+# 드라이버 설정
 # ------------------------------------------------------------
 def make_driver():
     opts = webdriver.ChromeOptions()
@@ -59,7 +58,7 @@ def save_debug(driver, tag: str):
         print(f"[WARN] 디버그 저장 실패: {e}")
 
 # ------------------------------------------------------------
-# 로그인 + 세션 팝업 처리 (원본 성공 로직 유지)
+# 로그인 (기존 성공본 유지)
 # ------------------------------------------------------------
 def login_and_handle_session(driver):
     driver.get("https://live.ecomm-data.com")
@@ -80,7 +79,7 @@ def login_and_handle_session(driver):
 
     time.sleep(1)
     email_input = [e for e in driver.find_elements(By.CSS_SELECTOR, "input[name='email']") if e.is_displayed()][0]
-    pw_input    = [e for e in driver.find_elements(By.CSS_SELECTOR, "input[name='password']") if e.is_displayed()][0]
+    pw_input = [e for e in driver.find_elements(By.CSS_SELECTOR, "input[name='password']") if e.is_displayed()][0]
     email_input.clear(); email_input.send_keys(ECOMM_ID)
     pw_input.clear(); pw_input.send_keys(ECOMM_PW)
 
@@ -89,7 +88,7 @@ def login_and_handle_session(driver):
     driver.execute_script("arguments[0].click();", login_button)
     print("✅ 로그인 시도!")
 
-    # 동시 세션 종료 후 접속
+    # 세션 초과 처리
     time.sleep(2)
     try:
         session_items = [li for li in driver.find_elements(By.CSS_SELECTOR, "ul > li") if li.is_displayed()]
@@ -106,7 +105,7 @@ def login_and_handle_session(driver):
     print("✅ 로그인 성공 완료")
 
 # ------------------------------------------------------------
-# 편성표 크롤링 (원본 유지)
+# 편성표 크롤링
 # ------------------------------------------------------------
 def crawl_schedule(driver):
     driver.get(SCHEDULE_URL)
@@ -136,12 +135,12 @@ def crawl_schedule(driver):
                 cols = row.find_elements(By.TAG_NAME, "td")
                 if len(cols) >= 7:
                     all_data.append({
-                        "방송시간": cols[1].text.strip(),  # "YYYY.MM.DD\nHH:MM"
-                        "방송정보": cols[2].text.strip(),  # "... 회사명"
-                        "분류":     cols[3].text.strip(),
-                        "판매량":   cols[4].text.strip(),
-                        "매출액":   cols[5].text.strip(),
-                        "상품수":   cols[6].text.strip()
+                        "방송시간": cols[1].text.strip(),
+                        "방송정보": cols[2].text.strip(),
+                        "분류": cols[3].text.strip(),
+                        "판매량": cols[4].text.strip(),
+                        "매출액": cols[5].text.strip(),
+                        "상품수": cols[6].text.strip()
                     })
         except Exception:
             continue
@@ -151,7 +150,7 @@ def crawl_schedule(driver):
     return df
 
 # ------------------------------------------------------------
-# Google Sheets 인증 (원본 유지)
+# Google Sheets 인증
 # ------------------------------------------------------------
 def gs_client_from_env():
     GSVC_JSON_B64 = os.environ.get("KEY1", "")
@@ -167,7 +166,7 @@ def gs_client_from_env():
     return gspread.authorize(creds)
 
 # ------------------------------------------------------------
-# 숫자 변환 (원본 유지)
+# 숫자 변환
 # ------------------------------------------------------------
 def _to_int_kor(s):
     if not s or s == "-": return 0
@@ -185,139 +184,70 @@ def _to_int_kor(s):
         return 0
 
 # ------------------------------------------------------------
-# 회사명 추출 (방송정보 말미의 플랫폼명 제거/추출)
-# ------------------------------------------------------------
-PLATFORM_MAP = {
-    "CJ온스타일":"Live","CJ온스타일 플러스":"TC","GS홈쇼핑":"Live","GS홈쇼핑 마이샵":"TC",
-    "KT알파쇼핑":"TC","NS홈쇼핑":"Live","NS홈쇼핑 샵플러스":"TC","SK스토아":"TC",
-    "공영쇼핑":"Live","롯데원티비":"TC","롯데홈쇼핑":"Live","쇼핑엔티":"TC",
-    "신세계쇼핑":"TC","현대홈쇼핑":"Live","현대홈쇼핑 플러스샵":"TC","홈앤쇼핑":"Live",
-}
-PLATFORMS_BY_LEN = sorted(PLATFORM_MAP.keys(), key=len, reverse=True)
-
-def split_company_from_broadcast(text):
-    if not text:
-        return text, "", ""
-    t = text.rstrip()
-    for key in PLATFORMS_BY_LEN:
-        pattern = r"\s*" + re.escape(key) + r"\s*$"
-        if re.search(pattern, t):
-            cleaned = re.sub(pattern, "", t).rstrip()
-            return cleaned, key, PLATFORM_MAP[key]
-    return text, "", ""
-
-# ------------------------------------------------------------
-# ✅ 데이터 전처리 (엑셀 수식 동등 구현)
-#   - 환산가치 매핑(문자열 기준)
-#   - 종료시간/방송시간(최대 2시간 캡)
-#   - 분리송출 판정 + 분할
-#   - 주문효율 산식
+# ✅ 데이터 전처리
 # ------------------------------------------------------------
 def preprocess_dataframe(df, sh):
     print("🧮 데이터 전처리 시작")
 
-    # --- 0) 방송날짜/시작시간 분리 ---
-    split_result = df['방송시간'].str.split('\n', n=1, expand=True)
-    df['방송날짜']    = pd.to_datetime(split_result[0].str.strip(), errors="coerce").dt.strftime("%Y-%m-%d")
-    df['방송시작시간'] = split_result[1].str.strip()
-
-    # --- 1) 매출액 환산 ---
+    # --- 날짜/시간 분리 ---
+    split_result = df["방송시간"].str.split("\n", n=1, expand=True)
+    df["방송날짜"] = pd.to_datetime(split_result[0].str.strip(), errors="coerce").dt.strftime("%Y-%m-%d")
+    df["방송시작시간"] = split_result[1].str.strip()
     df["매출액 환산수식"] = df["매출액"].apply(_to_int_kor)
 
-    # --- 2) 회사명 추출(분리송출 판정을 위해 필요) ---
-    #    (출력 컬럼에는 포함하지 않지만 계산에는 사용)
-    tmp_company = []
-    for txt in df["방송정보"].astype(str).tolist():
-        _, company, _ = split_company_from_broadcast(txt)
-        tmp_company.append(company)
-    df["_회사명_TMP"] = tmp_company
-
-    # --- 기준가치 시트 병합 (기준시간 x 일자 구조 대응) ---
+    # --- 기준가치 시트 참조 (기준시간 × N일 구조) ---
     try:
-    기준_ws = sh.worksheet("기준가치")
-    ref_values = 기준_ws.get_all_values()
-    ref_df = pd.DataFrame(ref_values[1:], columns=[c.strip() for c in ref_values[0]])
-    ref_df["기준시간"] = ref_df["기준시간"].astype(str).str.strip()
-    
-    # 일자 번호 추출 (예: '2025-10-22' → '22')
-    df["일자"] = pd.to_datetime(df["방송날짜"]).dt.day.astype(str) + "일"
-    df["시간대"] = pd.to_datetime(df["방송시작시간"], format="%H:%M", errors="coerce").dt.hour.astype(str)
-    
-    def lookup_value(row):
-        h = row["시간대"]
-        d = row["일자"]
-        try:
-            val = ref_df.loc[ref_df["기준시간"] == h, d].values
-            if len(val) > 0:
-                return float(val[0])
-        except Exception:
-            pass
-        return 0.0
+        기준_ws = sh.worksheet("기준가치")
+        ref_values = 기준_ws.get_all_values()
+        ref_df = pd.DataFrame(ref_values[1:], columns=[c.strip() for c in ref_values[0]])
+        ref_df["기준시간"] = ref_df["기준시간"].astype(str).str.strip()
 
-    df["환산가치"] = df.apply(lookup_value, axis=1)
+        df["일자"] = pd.to_datetime(df["방송날짜"]).dt.day.astype(str) + "일"
+        df["시간대"] = pd.to_datetime(df["방송시작시간"], format="%H:%M", errors="coerce").dt.hour.astype(str)
+
+        def lookup_value(row):
+            h = row["시간대"]
+            d = row["일자"]
+            try:
+                val = ref_df.loc[ref_df["기준시간"] == h, d].values
+                if len(val) > 0:
+                    return float(val[0])
+            except Exception:
+                pass
+            return 0.0
+
+        df["환산가치"] = df.apply(lookup_value, axis=1)
+        print("✅ 기준가치 시트 매핑 완료")
 
     except Exception as e:
-    print("⚠️ 기준가치 시트 로드 오류:", e)
-    df["환산가치"] = 0.0
-    
-    # --- 4) 종료시간 계산 ---
-    # 동일 회사 다음 방송의 시작시각을 종료시각으로.
-    # (없으면 24:30 고정; 마지막 슬롯 보정. 전체 다음 방송(타사)도 후보가 될 수 있음)
-    # 날짜는 동일하다고 가정.
-    day = pd.to_datetime(df["방송날짜"]).dt.date.iloc[0] if len(df) else datetime.now().date()
+        print("⚠️ 기준가치 시트 로드 오류:", e)
+        df["환산가치"] = 0.0
 
-    def to_dt(hhmm):
-        try:
-            h, m = map(int, str(hhmm).split(":"))
-            return datetime.combine(day, datetime.min.time()) + timedelta(hours=h, minutes=m)
-        except Exception:
-            return pd.NaT
+    # --- 종료시간 계산 (회사명 없이 순차기준 + 2시간 제한) ---
+    df_sorted = df.sort_values("방송시작시간").reset_index()
+    start_times = pd.to_datetime(df_sorted["방송시작시간"], format="%H:%M", errors="coerce")
+    next_times = start_times.shift(-1)
 
-    df["_start_dt"] = df["방송시작시간"].apply(to_dt)
+    end_times = []
+    for i, st in enumerate(start_times):
+        if pd.isna(st):
+            end_times.append(pd.NaT)
+            continue
+        et = next_times.iloc[i]
+        if pd.isna(et) or et <= st:
+            et = st + timedelta(hours=0, minutes=90)
+        if (et - st) > timedelta(hours=2):
+            et = st + timedelta(hours=2)
+        end_times.append(et)
 
-    # 전체 스케줄 기준 "다음 방송 시작시각"
-    df_sorted_all = df.sort_values("_start_dt").reset_index()
-    df_sorted_all["_next_any"] = df_sorted_all["_start_dt"].shift(-1)
-    next_any_map = dict(zip(df_sorted_all["index"], df_sorted_all["_next_any"]))
-    df["_next_any"] = df.index.map(next_any_map)
+    df_sorted["종료시간"] = [t.strftime("%H:%M") if pd.notna(t) else "" for t in end_times]
+    df = df_sorted.drop(columns=["index"])
 
-    # 회사별 기준 "다음 방송 시작시각"
-    df_sorted_co = df.sort_values(["_회사명_TMP", "_start_dt"]).reset_index()
-    df_sorted_co["_next_same"] = df_sorted_co.groupby("_회사명_TMP")["_start_dt"].shift(-1)
-    next_same_map = dict(zip(df_sorted_co["index"], df_sorted_co["_next_same"]))
-    df["_next_same"] = df.index.map(next_same_map)
-
-    # 종료시각 결정: 우선 같은 회사의 다음 방송, 없으면 전체 다음 방송, 그것도 없으면 24:30
-    def decide_end(row):
-        end_dt = row["_next_same"]
-        if pd.isna(end_dt):
-            end_dt = row["_next_any"]
-        if pd.isna(end_dt):
-            # 마지막 슬롯: 24:30 (= 다음날 00:30)
-            end_dt = datetime.combine(day, datetime.min.time()) + timedelta(days=1, hours=0, minutes=30)
-        # 최대 2시간 제한
-        if not pd.isna(row["_start_dt"]) and (end_dt - row["_start_dt"]) > timedelta(hours=2):
-            end_dt = row["_start_dt"] + timedelta(hours=2)
-        return end_dt
-
-    df["_end_dt"] = df.apply(decide_end, axis=1)
-
-    # 종료시각 텍스트: 24:30은 특수 표기, 그 외는 HH:MM
-    def format_end(end_dt):
-        # 다음날 00:30은 24:30으로 표기
-        if isinstance(end_dt, datetime):
-            base = datetime.combine(day, datetime.min.time())
-            if (end_dt - base) == timedelta(days=1, minutes=30):
-                return "24:30"
-            return end_dt.strftime("%H:%M")
-        return ""
-    df["종료시간"] = df["_end_dt"].apply(format_end)
-
-    # --- 5) 방송시간 절대시 (종료-시작, HH:MM 포맷 / 2시간 cap 반영) ---
-    def fmt_duration(start_dt, end_dt):
-        if pd.isna(start_dt) or pd.isna(end_dt):
+    # --- 방송시간 절대시 (HH:MM 포맷, 2시간 초과 시 2시간 고정) ---
+    def fmt_duration(start, end):
+        if pd.isna(start) or pd.isna(end):
             return "00:00"
-        delta = end_dt - start_dt
+        delta = end - start
         if delta < timedelta(0):
             delta = timedelta(0)
         if delta > timedelta(hours=2):
@@ -326,15 +256,18 @@ def preprocess_dataframe(df, sh):
         hh = total_min // 60
         mm = total_min % 60
         return f"{hh:02d}:{mm:02d}"
-    df["방송시간 절대시"] = df.apply(lambda r: fmt_duration(r["_start_dt"], r["_end_dt"]), axis=1)
 
-    # --- 6) 분리송출 판정 + 분할 (COUNTIFS 동등: 회사명+방송시작시간) ---
-    grp_cnt = df.groupby(["_회사명_TMP", "방송시작시간"]).transform("size")
-    df["분리송출구분"] = grp_cnt.apply(lambda x: "분리송출" if x > 1 else "일반")
-    split_counts = grp_cnt.clip(lower=1)  # 최소 1
-    df["분리송출고려환산가치"] = df["환산가치"] / split_counts
+    df["방송시간 절대시"] = [
+        fmt_duration(s, e)
+        for s, e in zip(start_times, end_times)
+    ]
 
-    # --- 7) 주문효율 /h = 매출액 환산수식 ÷ 분리송출고려환산가치 ---
+    # --- 분리송출 구분 및 환산가치 나누기 ---
+    grp_counts = df.groupby(["방송시작시간"]).transform("size")
+    df["분리송출구분"] = grp_counts.apply(lambda x: "분리송출" if x > 1 else "일반")
+    df["분리송출고려환산가치"] = df["환산가치"] / grp_counts.clip(lower=1)
+
+    # --- 주문효율/h = 매출액 환산수식 ÷ 분리송출고려환산가치 ---
     def safe_eff(sales, adj_val):
         try:
             if adj_val and float(adj_val) != 0.0:
@@ -342,36 +275,14 @@ def preprocess_dataframe(df, sh):
         except:
             pass
         return 0
+
     df["주문효율 /h"] = df.apply(lambda r: safe_eff(r["매출액 환산수식"], r["분리송출고려환산가치"]), axis=1)
-
-    # 표시용 부가 컬럼
-    df["일자"] = pd.to_datetime(df["방송날짜"], errors="coerce").dt.day.astype("Int64").astype(str) + "일"
-
-    # 업로드 컬럼 순서 구성
-    # A:I(원본) + [매출액 환산수식(H 옆에 '종료시간' 추가로 한 칸씩 밀기)]
-    # 최종: 방송날짜, 방송시작시간, 방송정보, 분류, 판매량, 매출액, 상품수,
-    #       매출액 환산수식, 종료시간, 방송시간 절대시, 분리송출구분, 일자, 시간대, 환산가치, 분리송출고려환산가치, 주문효율 /h
-    df["시간대"] = df["시간대"].astype(str)  # 이미 위에서 설정
-    final_cols = [
-        "방송날짜","방송시작시간","방송정보","분류","판매량","매출액","상품수",
-        "매출액 환산수식","종료시간","방송시간 절대시","분리송출구분",
-        "일자","시간대","환산가치","분리송출고려환산가치","주문효율 /h"
-    ]
-    # 누락 컬럼 보호
-    for c in final_cols:
-        if c not in df.columns:
-            df[c] = ""
-    df = df[final_cols]
-
-    # 내부 계산용 임시 컬럼 정리
-    drop_cols = [c for c in ["_회사명_TMP","_start_dt","_end_dt","_next_any","_next_same"] if c in df.columns]
-    df = df.drop(columns=drop_cols, errors="ignore")
 
     print("✅ 데이터 전처리 완료")
     return df
 
 # ------------------------------------------------------------
-# 메인 (원본 흐름 유지 + 전처리 삽입)
+# 메인
 # ------------------------------------------------------------
 def main():
     key_path = Path("C:/key/composed-apogee-442305-k5-b134efa6db1c.json")
@@ -381,24 +292,17 @@ def main():
 
     driver = make_driver()
     try:
-        # 1) 로그인/세션 처리
         login_and_handle_session(driver)
-
-        # 2) 크롤링
         df = crawl_schedule(driver)
-
-        # 3) 구글시트 핸들
         gc = gs_client_from_env()
         sh = gc.open_by_url(SPREADSHEET_URL)
-
-        # 4) ✅ 전처리
         df = preprocess_dataframe(df, sh)
 
-        # 5) RAW 업로드
         try:
             ws = sh.worksheet(WORKSHEET_NAME)
         except gspread.exceptions.WorksheetNotFound:
             ws = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(df.columns))
+
         data_to_upload = [df.columns.tolist()] + df.astype(str).values.tolist()
         ws.clear()
         ws.update(values=data_to_upload, range_name="A1")
@@ -414,4 +318,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
