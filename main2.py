@@ -232,20 +232,34 @@ def preprocess_dataframe(df, sh):
         tmp_company.append(company)
     df["_회사명_TMP"] = tmp_company
 
-    # --- 3) 환산가치 매핑 (기준가치 시트: 문자열 키 매칭 + 공백 제거) ---
+    # --- 기준가치 시트 병합 (기준시간 x 일자 구조 대응) ---
     try:
-        기준_ws = sh.worksheet("기준가치")
-        ref_values = 기준_ws.get_all_values()
-        ref_df = pd.DataFrame(ref_values[1:], columns=[c.strip() for c in ref_values[0]])
-        ref_df["시간대"]   = ref_df["시간대"].astype(str).str.strip()
-        ref_df["환산가치"] = pd.to_numeric(ref_df["환산가치"], errors="coerce").fillna(method="ffill").fillna(0)
-        df["시간대"]       = pd.to_datetime(df["방송시작시간"], format="%H:%M", errors="coerce").dt.hour.astype(str)
-        df = df.merge(ref_df, on="시간대", how="left")
-        df["환산가치"] = df["환산가치"].fillna(0.0)
-    except Exception as e:
-        print("⚠️ 기준가치 시트 로드 오류:", e)
-        df["환산가치"] = 0.0
+    기준_ws = sh.worksheet("기준가치")
+    ref_values = 기준_ws.get_all_values()
+    ref_df = pd.DataFrame(ref_values[1:], columns=[c.strip() for c in ref_values[0]])
+    ref_df["기준시간"] = ref_df["기준시간"].astype(str).str.strip()
+    
+    # 일자 번호 추출 (예: '2025-10-22' → '22')
+    df["일자"] = pd.to_datetime(df["방송날짜"]).dt.day.astype(str) + "일"
+    df["시간대"] = pd.to_datetime(df["방송시작시간"], format="%H:%M", errors="coerce").dt.hour.astype(str)
+    
+    def lookup_value(row):
+        h = row["시간대"]
+        d = row["일자"]
+        try:
+            val = ref_df.loc[ref_df["기준시간"] == h, d].values
+            if len(val) > 0:
+                return float(val[0])
+        except Exception:
+            pass
+        return 0.0
 
+    df["환산가치"] = df.apply(lookup_value, axis=1)
+
+    except Exception as e:
+    print("⚠️ 기준가치 시트 로드 오류:", e)
+    df["환산가치"] = 0.0
+    
     # --- 4) 종료시간 계산 ---
     # 동일 회사 다음 방송의 시작시각을 종료시각으로.
     # (없으면 24:30 고정; 마지막 슬롯 보정. 전체 다음 방송(타사)도 후보가 될 수 있음)
@@ -400,3 +414,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
