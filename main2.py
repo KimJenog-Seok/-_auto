@@ -41,7 +41,7 @@ def make_driver():
     """GitHub Actions/서버/로컬 공용 크롬 드라이버 (Headless)."""
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless=new")
-    opts.add_JArgument("--no-sandbox")
+    opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=1920,1080")
@@ -821,3 +821,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
