@@ -651,9 +651,7 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
 
 
         # --- 2. 'INS_전일' 시트 서식 (기존 원본과 동일) ---
-        # ★★★★★ (참고) 'INS_전일'은 어차피 행이 40개 미만이라 
-        # 'ins_ws.row_count'를 써도 아무 문제가 없습니다.
-        # ★★★★★
+        # 'INS_전일'은 어차피 행이 40개 미만이라 'ins_ws.row_count'를 써도 아무 문제가 없습니다.
         ins_col_count = 3
         
         reqs.append({
@@ -703,7 +701,7 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         print(traceback.format_exc())
 
 # ------------------------------------------------------------
-# 메인 (★ 'row_count' 전달하도록 수정 ★)
+# 메인 (★ 'row_count' 전달 + 'gc.login()' 제거 ★)
 # ------------------------------------------------------------
 def main():
     # 로컬 테스트용 KEY1 환경 변수 설정
@@ -766,6 +764,7 @@ def main():
         
         cols_cnt = max(2, max(len(r) for r in source_values))
         
+        # ★★★★★ 'rows=' 인자를 실제 행 수로 지정
         new_ws = sh.add_worksheet(title=target_title, rows=actual_row_count, cols=cols_cnt)
         new_ws.update("A1", source_values)
         print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title} (행: {actual_row_count})")
@@ -809,13 +808,10 @@ def main():
         
         # 10) --- 서식 적용 함수 호출 ---
         
-        # 토큰 만료 해결을 위한 재-로그인
-        print("[STEP] 인증 토큰 갱신 (서식 적용 전)...")
-        if gc: # gc가 None이 아닌지 확인
-            gc.login()
-        print("✅ 인증 토큰 갱신 완료")
+        # ★★★★★ 'gc.login()' (오류 원인) 제거 ★★★★★
         
         # ★★★★★ apply_formatting 호출 시 'actual_row_count' 전달
+        print(f"[STEP] 서식 적용 시작 (총 {actual_row_count} 행 대상)...")
         apply_formatting(sh, new_ws, ins_ws, actual_row_count)
         # --- 서식 적용 함수 호출 끝 ---
 
