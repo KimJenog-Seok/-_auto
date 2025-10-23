@@ -499,24 +499,21 @@ def preprocess_dataframe(df_raw, sh):
     print("✅ 데이터 전처리 완료 (18개 열 생성)")
     return df_final
 
-
 # ------------------------------------------------------------
-# 구글 시트 서식 지정 (main2.py 원본 유지)
+# 구글 시트 서식 지정 (★ J:R열 서식 추가하여 수정 ★)
 # ------------------------------------------------------------
 def apply_formatting(sh, new_ws, ins_ws):
     import traceback
     try:
         reqs = []
         
-        # '어제 날짜' 시트의 열 개수 확인 (A-I 총 9개)
-        # ★ 참고: 이 함수는 A-I까지만 서식을 지정합니다 (요청대로) ★
-        # J-R 열은 기본 서식으로 남습니다.
-        col_count = 9 
+        # --- ★ 수정: A:R (18개 열) 기준으로 변경 ★ ---
+        col_count = 18
         row_count = new_ws.row_count
 
-        # 1. '어제 날짜' 시트 서식 (A-I까지만 적용)
+        # 1. '어제 날짜' 시트 서식 (A:R 적용)
         
-        # 전체 셀에 테두리
+        # (수정됨) 전체 셀에 테두리 (A1:R[end])
         reqs.append({
             "updateBorders": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
@@ -526,7 +523,7 @@ def apply_formatting(sh, new_ws, ins_ws):
             }
         })
         
-        # 열 너비 설정: C열 600, H열 130, I열 130, 나머지 100
+        # (수정됨) 열 너비 기본 100 (A:R)
         reqs.append({
             "updateDimensionProperties": {
                 "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": col_count},
@@ -534,6 +531,8 @@ def apply_formatting(sh, new_ws, ins_ws):
                 "fields": "pixelSize"
             }
         })
+        
+        # (기존) C열 600
         reqs.append({
             "updateDimensionProperties": {
                 "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3},
@@ -541,6 +540,8 @@ def apply_formatting(sh, new_ws, ins_ws):
                 "fields": "pixelSize"
             }
         })
+        
+        # (기존) H, I열 130
         reqs.append({
             "updateDimensionProperties": {
                 "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 9}, # H, I열
@@ -548,25 +549,54 @@ def apply_formatting(sh, new_ws, ins_ws):
                 "fields": "pixelSize"
             }
         })
+
+        # --- ★ 신규: J, Q, R 열 너비 추가 ★ ---
+        # J열 (idx 9) 160
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 9, "endIndex": 10},
+                "properties": {"pixelSize": 160},
+                "fields": "pixelSize"
+            }
+        })
+        # Q열 (idx 16) 150
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 16, "endIndex": 17},
+                "properties": {"pixelSize": 150},
+                "fields": "pixelSize"
+            }
+        })
+        # R열 (idx 17) 120
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 17, "endIndex": 18},
+                "properties": {"pixelSize": 120},
+                "fields": "pixelSize"
+            }
+        })
+        # (K-P열은 기본값 100이므로 생략)
         
-        # 정렬 설정
-        # C열(방송정보) 데이터 부분(C2부터) 왼쪽 정렬
+        # --- 정렬 (기존 로직 유지) ---
+        # (기존) C열 데이터 왼쪽 정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 2, "endColumnIndex": 3},
+                "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 2, "endIndex": 3},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
-        # 헤더 포함 A,B열 가운데 정렬
+        # (기존) A,B열 가운데 정렬 (헤더+데이터)
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": 2},
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endIndex": 2},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
-        # 헤더 포함 D~I열 가운데 정렬
+        
+        # (수정됨) D~R열 가운데 정렬 (헤더+데이터)
+        # col_count가 18로 변경되어 D:R 까지 자동 적용됨
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count},
@@ -574,7 +604,9 @@ def apply_formatting(sh, new_ws, ins_ws):
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
-        # 헤더(A1:I1) 배경색 및 가운데 정렬
+        
+        # (수정됨) 헤더(A1:R1) 배경색 및 가운데 정렬
+        # col_count가 18로 변경되어 A1:R1 까지 자동 적용됨
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
@@ -583,8 +615,39 @@ def apply_formatting(sh, new_ws, ins_ws):
             }
         })
 
+        # --- ★ 신규: J열, R열 숫자 서식 (천단위 콤마, 헤더 제외) ★ ---
+        number_format_req = {
+            "repeatCell": {
+                "range": {
+                    "sheetId": new_ws.id,
+                    "startRowIndex": 1, # 헤더 제외
+                    "endRowIndex": row_count
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "numberFormat": {
+                            "type": "NUMBER",
+                            "pattern": "#,##0" # 소수점 없음
+                        }
+                    }
+                },
+                "fields": "userEnteredFormat.numberFormat"
+            }
+        }
+        # J열 (idx 9)
+        req_j = json.loads(json.dumps(number_format_req)) # 템플릿 복사
+        req_j["repeatCell"]["range"]["startColumnIndex"] = 9
+        req_j["repeatCell"]["range"]["endColumnIndex"] = 10
+        reqs.append(req_j)
+        
+        # R열 (idx 17)
+        req_r = json.loads(json.dumps(number_format_req)) # 템플릿 복사
+        req_r["repeatCell"]["range"]["startColumnIndex"] = 17
+        req_r["repeatCell"]["range"]["endColumnIndex"] = 18
+        reqs.append(req_r)
 
-        # 2. 'INS_전일' 시트 서식 (main2.py 원본 유지)
+
+        # --- 2. 'INS_전일' 시트 서식 (기존 원본과 동일) ---
         ins_col_count = 3
         
         reqs.append({
@@ -619,13 +682,15 @@ def apply_formatting(sh, new_ws, ins_ws):
 
         # A26:C36
         reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 36, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
-        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 8.0}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
+        reqs.append({"repeatCell": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"}})
         
         sh.batch_update({"requests": reqs})
-        print("✅ 서식 적용 완료")
+        print("✅ 서식 적용 완료 (J:R열 포함)")
     except Exception as e:
         print(f"⚠️ 서식 적용 실패: {e}")
         print(traceback.format_exc())
+
+
 
 # ------------------------------------------------------------
 # 메인 (★ 전처리 로직 삽입하여 수정 ★)
@@ -751,3 +816,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
