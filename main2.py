@@ -499,6 +499,7 @@ def preprocess_dataframe(df_raw, sh):
     print("✅ 데이터 전처리 완료 (18개 열 생성)")
     return df_final
 
+
 # ------------------------------------------------------------
 # 구글 시트 서식 지정 (★ J:R열 서식 추가하여 수정 ★)
 # ------------------------------------------------------------
@@ -690,8 +691,6 @@ def apply_formatting(sh, new_ws, ins_ws):
         print(f"⚠️ 서식 적용 실패: {e}")
         print(traceback.format_exc())
 
-
-
 # ------------------------------------------------------------
 # 메인 (★ 전처리 로직 삽입하여 수정 ★)
 # ------------------------------------------------------------
@@ -782,7 +781,7 @@ def main():
             rows_cnt = max(2, len(sheet_data))
             cols_cnt = max(2, max(len(r) for r in sheet_data))
             ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=rows_cnt, cols=cols_cnt)
-            print("[GS] INS_전일 워크시T 생성")
+            print("[GS] INS_전일 워크시트 생성")
         
         ins_ws.update("A1", sheet_data)
         print("✅ INS_전일 생성/갱신 완료")
@@ -816,4 +815,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
