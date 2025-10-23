@@ -41,7 +41,7 @@ def make_driver():
     """GitHub Actions/서버/로컬 공용 크롬 드라이버 (Headless)."""
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless=new")
-    opts.add_argument("--no-sandbox")
+    opts.add_argument("--no-sandbox") # <- 'add_JArgument' 오타 수정됨
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=1920,1080")
@@ -501,20 +501,25 @@ def preprocess_dataframe(df_raw, sh):
 
 
 # ------------------------------------------------------------
-# 구글 시트 서식 지정 (★ 'blue: 8.0' 오타 수정 ★)
+# 구글 시트 서식 지정 (★ 'row_count' 범위 오류 수정 ★)
 # ------------------------------------------------------------
-def apply_formatting(sh, new_ws, ins_ws):
+def apply_formatting(sh, new_ws, ins_ws, data_row_count):
+    # ★★★★★
+    # 'new_ws.row_count' 대신, main()에서 계산한
+    # 실제 데이터 행 수 'data_row_count'를 받도록 수정
+    # ★★★★★
     import traceback
     try:
         reqs = []
         
-        # --- ★ 수정: A:R (18개 열) 기준으로 변경 ★ ---
+        # --- A:R (18개 열) 기준으로 설정 ---
         col_count = 18
-        row_count = new_ws.row_count
+        # ★★★★★ 'new_ws.row_count' 대신 전달받은 'data_row_count' 사용
+        row_count = data_row_count 
 
         # 1. '어제 날짜' 시트 서식 (A:R 적용)
         
-        # (수정됨) 전체 셀에 테두리 (A1:R[end])
+        # (수정됨) 전체 셀에 테두리 (A1:R[row_count])
         reqs.append({
             "updateBorders": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
@@ -551,7 +556,7 @@ def apply_formatting(sh, new_ws, ins_ws):
             }
         })
 
-        # --- ★ 신규: J, Q, R 열 너비 추가 ★ ---
+        # --- J, Q, R 열 너비 추가 ---
         # J열 (idx 9) 160
         reqs.append({
             "updateDimensionProperties": {
@@ -576,9 +581,8 @@ def apply_formatting(sh, new_ws, ins_ws):
                 "fields": "pixelSize"
             }
         })
-        # (K-P열은 기본값 100이므로 생략)
         
-        # --- 정렬 (기존 로직 유지) ---
+        # --- 정렬 ---
         # (기존) C열 데이터 왼쪽 정렬
         reqs.append({
             "repeatCell": {
@@ -597,7 +601,6 @@ def apply_formatting(sh, new_ws, ins_ws):
         })
         
         # (수정됨) D~R열 가운데 정렬 (헤더+데이터)
-        # col_count가 18로 변경되어 D:R 까지 자동 적용됨
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count},
@@ -607,7 +610,6 @@ def apply_formatting(sh, new_ws, ins_ws):
         })
         
         # (수정됨) 헤더(A1:R1) 배경색 및 가운데 정렬
-        # col_count가 18로 변경되어 A1:R1 까지 자동 적용됨
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
@@ -616,13 +618,13 @@ def apply_formatting(sh, new_ws, ins_ws):
             }
         })
 
-        # --- ★ 신규: J열, R열 숫자 서식 (천단위 콤마, 헤더 제외) ★ ---
+        # --- J열, R열 숫자 서식 (천단위 콤마, 헤더 제외) ---
         number_format_req = {
             "repeatCell": {
                 "range": {
                     "sheetId": new_ws.id,
                     "startRowIndex": 1, # 헤더 제외
-                    "endRowIndex": row_count
+                    "endRowIndex": row_count # ★★★★★ 범위 수정
                 },
                 "cell": {
                     "userEnteredFormat": {
@@ -649,6 +651,9 @@ def apply_formatting(sh, new_ws, ins_ws):
 
 
         # --- 2. 'INS_전일' 시트 서식 (기존 원본과 동일) ---
+        # ★★★★★ (참고) 'INS_전일'은 어차피 행이 40개 미만이라 
+        # 'ins_ws.row_count'를 써도 아무 문제가 없습니다.
+        # ★★★★★
         ins_col_count = 3
         
         reqs.append({
@@ -684,7 +689,7 @@ def apply_formatting(sh, new_ws, ins_ws):
         # A26:C36
         reqs.append({"updateBorders": {"range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 36, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"}, "left": {"style": "SOLID"}, "right": {"style": "SOLID"}, "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"}}})
         
-        # --- ★★★ 오타 수정된 부분 ★★★ ---
+        # --- 'blue: 8.0' 오타 수정된 부분 ---
         reqs.append({"repeatCell": {
             "range": {"sheetId": ins_ws.id, "startRowIndex": 25, "endRowIndex": 26, "startColumnIndex": 0, "endColumnIndex": ins_col_count}, 
             "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}}, # 8.0 -> 0.8
@@ -692,13 +697,13 @@ def apply_formatting(sh, new_ws, ins_ws):
         }})
         
         sh.batch_update({"requests": reqs})
-        print("✅ 서식 적용 완료 (J:R열 포함)")
+        print(f"✅ 서식 적용 완료 (적용 행 수: {row_count})")
     except Exception as e:
         print(f"⚠️ 서식 적용 실패: {e}")
         print(traceback.format_exc())
 
 # ------------------------------------------------------------
-# 메인 (★ 전처리 로직 삽입하여 수정 ★)
+# 메인 (★ 'row_count' 전달하도록 수정 ★)
 # ------------------------------------------------------------
 def main():
     # 로컬 테스트용 KEY1 환경 변수 설정
@@ -713,6 +718,11 @@ def main():
     sh = None
     worksheet = None
     new_ws = None
+    gc = None # gc를 try 블록 이전에 선언
+    
+    # ★★★★★ 서식 적용에 필요한 실제 행 수를 저장할 변수
+    actual_row_count = 0 
+    
     try:
         # 1) 로그인 + 세션 팝업 처리
         login_and_handle_session(driver)
@@ -721,13 +731,14 @@ def main():
         df_raw = crawl_schedule(driver)
 
         # 3) 구글 시트 인증
-        gc = gs_client_from_env()
+        gc = gs_client_from_env() # gc에 할당
         sh = gc.open_by_url(SPREADSHEET_URL)
         print("[GS] 스프레드시트 열기 OK")
         
         # 4) ★ 신규 ★ 데이터 전처리 (J-R열 추가)
-        # 크롤링 직후, 시트에 업로드하기 전에 전처리 함수 호출
+        print("[STEP] 데이터 전처리 시작 (시간이 걸릴 수 있습니다)...")
         df_processed = preprocess_dataframe(df_raw, sh)
+        print("[STEP] 데이터 전처리 완료.")
 
         # 5) '편성표RAW' 시트 확보(없으면 생성)
         try:
@@ -746,20 +757,24 @@ def main():
         # 7) 어제 날짜 새 시트 생성 & 값 복사 (★ 전처리된 18개 열 데이터가 복사됨 ★)
         base_title = make_yesterday_title_kst()
         target_title = unique_sheet_title(sh, base_title)
+        
+        # ★★★★★ 'source_values'를 여기서 읽어와서 실제 행 수를 계산
         source_values = worksheet.get_all_values() or [[""]] # 18개 열 데이터
-        rows_cnt = max(2, len(source_values))
+        
+        # ★★★★★ 'actual_row_count' 변수에 실제 데이터 행 수 저장 (헤더 포함)
+        actual_row_count = max(2, len(source_values))
+        
         cols_cnt = max(2, max(len(r) for r in source_values))
-        new_ws = sh.add_worksheet(title=target_title, rows=rows_cnt, cols=cols_cnt)
+        
+        new_ws = sh.add_worksheet(title=target_title, rows=actual_row_count, cols=cols_cnt)
         new_ws.update("A1", source_values)
-        print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title}")
+        print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title} (행: {actual_row_count})")
         
         # 8) ★ 삭제 ★ : 방송정보 말미 회사명 제거 로직
-        # (이유: 4단계 preprocess_dataframe에서 이미 완료됨)
-        # print("✅ 방송정보 말미 회사명 제거 + 회사명/홈쇼핑구분 열 추가 완료") -> 이미 완료됨
         
         # 9) 집계 시트 생성 (main2.py 원본 유지)
-        # (new_ws에서 값을 읽어오며, A-I열만 사용하므로 18개 열이 있어도 정상 동작)
-        values = new_ws.get_all_values() or [[""]]
+        # ★★★★★ 'values'를 'source_values'로 재활용 (이미 읽어왔음)
+        values = source_values 
         if not values or len(values) < 2:
             raise Exception("INS_전일 생성 실패: 데이터 행이 없습니다.")
         header = values[0]; body = values[1:]
@@ -792,8 +807,16 @@ def main():
         ins_ws.update("A1", sheet_data)
         print("✅ INS_전일 생성/갱신 완료")
         
-        # 10) --- 서식 적용 함수 호출 --- (main2.py 원본 유지)
-        apply_formatting(sh, new_ws, ins_ws)
+        # 10) --- 서식 적용 함수 호출 ---
+        
+        # 토큰 만료 해결을 위한 재-로그인
+        print("[STEP] 인증 토큰 갱신 (서식 적용 전)...")
+        if gc: # gc가 None이 아닌지 확인
+            gc.login()
+        print("✅ 인증 토큰 갱신 완료")
+        
+        # ★★★★★ apply_formatting 호출 시 'actual_row_count' 전달
+        apply_formatting(sh, new_ws, ins_ws, actual_row_count)
         # --- 서식 적용 함수 호출 끝 ---
 
         # 11) 탭 순서 재배치 (main2.py 원본 유지)
@@ -821,4 +844,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
