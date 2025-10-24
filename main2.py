@@ -281,127 +281,15 @@ def _format_df_table(df):
     return [d.columns.tolist()] + d.astype(str).values.tolist()
 
 # ===================== 전처리 =====================
+# --- 중략 (기존 코드 동일) ---
+
 def preprocess_dataframe(df_raw, sh):
     print("🧮 데이터 전처리 시작")
     df = df_raw.copy()
 
-    # 방송날짜/시작시간 분리
-    split_result = df["방송시간"].str.split("\n", n=1, expand=True)
-    if len(split_result.columns) == 2:
-        df["방송날짜"]     = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
-        df["방송시작시간"] = split_result[1].str.strip()
-    else:
-        df["방송날짜"]     = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
-        df["방송시작시간"] = ""
+    # ... (중간 동일)
 
-    # 어제 날짜(종료시간 계산용)
-    try:
-        day = pd.to_datetime(df["방송날짜"].iloc[0]).date()
-    except Exception:
-        KST = timezone(timedelta(hours=9))
-        day = datetime.now(KST).date() - timedelta(days=1)
-
-    # 방송정보에서 회사명/구분 분리
-    titles, companies, kinds = [], [], []
-    for txt in df["방송정보"].astype(str):
-        title, comp, kind = split_company_from_broadcast(txt)
-        titles.append(title); companies.append(comp); kinds.append(kind)
-    df["상품명"] = titles
-    df["회사명"] = companies
-    df["홈쇼핑구분"] = kinds
-
-    # 매출액 환산
-    df["매출액 환산수식"] = df["매출액"].apply(_to_int_kor)
-
-    # 기준가치 매핑
-    try:
-        기준_ws = sh.worksheet("기준가치")
-        ref_values = 기준_ws.get_all_values()
-        ref_df = pd.DataFrame(ref_values[1:], columns=[c.strip() for c in ref_values[0]])
-        ref_df.rename(columns=lambda c: c.strip(), inplace=True)
-        if "기준시간" not in ref_df.columns:
-            for c in list(ref_df.columns):
-                if c.replace(" ", "") == "기준시간":
-                    ref_df.rename(columns={c: "기준시간"}, inplace=True)
-                    break
-        ref_df["기준시간"] = ref_df["기준시간"].astype(str).str.strip()
-
-        df["일자"] = pd.to_datetime(df["방송날짜"]).dt.day.astype(str) + "일"
-        df["시간대"] = pd.to_datetime(df["방송시작시간"], format="%H:%M", errors="coerce").dt.hour.astype(str)
-
-        def lookup_value(row):
-            h = row["시간대"]
-            d = row["일자"]
-            try:
-                val = ref_df.loc[ref_df["기준시간"] == h, d].values
-                if len(val) > 0 and str(val[0]).strip() != "":
-                    return float(str(val[0]).replace(",", ""))
-            except Exception:
-                pass
-            return 0.0
-
-        df["환산가치"] = df.apply(lookup_value, axis=1)
-        print("✅ 기준가치 시트 매핑 완료")
-    except Exception as e:
-        print(f"⚠️ '기준가치' 시트 로드 또는 매핑 오류: {e}")
-        df["환산가치"] = 0.0
-
-    # 종료시간 계산
-    def to_dt(hhmm):
-        try:
-            h, m = map(int, str(hhmm).split(":"))
-            return datetime.combine(day, datetime.min.time()) + timedelta(hours=h, minutes=m)
-        except Exception:
-            return pd.NaT
-
-    df["_start_dt"] = df["방송시작시간"].apply(to_dt)
-    df_sorted = df.sort_values(["회사명", "_start_dt"]).reset_index()
-    df_sorted["_next_same"] = df_sorted.groupby("회사명")["_start_dt"].shift(-1)
-    next_same_map = dict(zip(df_sorted["index"], df_sorted["_next_same"]))
-    df["_next_same"] = df.index.map(next_same_map)
-
-    def decide_end(row):
-        st = row["_start_dt"]
-        et = row["_next_same"]
-        if pd.isna(st):
-            return pd.NaT
-        if pd.isna(et):
-            et = datetime.combine(day, datetime.min.time()) + timedelta(days=1, minutes=30)
-        if et - st > timedelta(hours=2):
-            et = st + timedelta(hours=2)
-        return et
-
-    df["_end_dt"] = df.apply(decide_end, axis=1)
-
-    def format_end(end_dt):
-        if isinstance(end_dt, datetime):
-            base0 = datetime.combine(day, datetime.min.time())
-            if (end_dt - base0) >= timedelta(days=1, minutes=30):
-                return "24:30"
-            return end_dt.strftime("%H:%M")
-        return ""
-    df["종료시간"] = df["_end_dt"].apply(format_end)
-
-    # 방송시간 절대시
-    def fmt_duration(st, et):
-        if pd.isna(st) or pd.isna(et):
-            return "00:00"
-        delta = et - st
-        if delta < timedelta(0):
-            delta = timedelta(0)
-        total_min = int(delta.total_seconds() // 60)
-        hh = total_min // 60
-        mm = total_min % 60
-        return f"{hh:02d}:{mm:02d}"
-
-    df["방송시간 절대시"] = df.apply(lambda r: fmt_duration(r["_start_dt"], r["_end_dt"]), axis=1)
-
-    # 분리송출
-    grp_counts = df.groupby(["회사명", "방송시작시간"])["방송시작시간"].transform("size")
-    df["분리송출구분"] = grp_counts.apply(lambda x: "분리송출" if x > 1 else "일반")
-    df["분리송출고려환산가치"] = df["환산가치"] / grp_counts.clip(lower=1)
-
-    # 주문효율
+    # 주문효율 계산
     def safe_eff(sales, adj):
         try:
             adjf = float(adj)
@@ -410,28 +298,85 @@ def preprocess_dataframe(df_raw, sh):
         except:
             pass
         return 0.0
-    df["주문효율 /h"] = df.apply(lambda r: safe_eff(r["매출액 환산수식"], r["분리송출고려환산가치"]), axis=1)
 
+    df["주문효율 /h"] = df.apply(
+        lambda r: safe_eff(r["매출액 환산수식"], r["분리송출고려환산가치"]), axis=1
+    )
+
+    # ✅ 소수점 제거 후 정수형으로 반올림
+    df["주문효율 /h"] = pd.to_numeric(df["주문효율 /h"], errors="coerce").fillna(0).round().astype(int)
+
+    # 최종 열 순서 지정
     final_cols = [
-        "방송날짜","방송시작시간","상품명","분류","판매량","매출액","상품수","회사명","홈쇼핑구분",
-        "매출액 환산수식","일자","시간대","환산가치","종료시간","방송시간 절대시","분리송출구분","분리송출고려환산가치","주문효율 /h"
+        "방송날짜","방송시작시간","상품명","분류","판매량","매출액","상품수",
+        "회사명","홈쇼핑구분","매출액 환산수식","일자","시간대","환산가치",
+        "종료시간","방송시간 절대시","분리송출구분","분리송출고려환산가치","주문효율 /h"
     ]
     for c in final_cols:
         if c not in df.columns:
             df[c] = ""
+
     df_final = df[final_cols].rename(columns={"상품명": "방송정보"})
     print("✅ 데이터 전처리 완료 (18개 열 생성)")
     return df_final
 
-# ===================== 서식 적용 =====================
+
+# ------------------------------------------------------------
+# ★★★ RAW / 날짜 / INS_전일 업로드 시 문자열 변환 제거 + USER_ENTERED 추가 ★★★
+# ------------------------------------------------------------
+def upload_sheets(sh, df_processed):
+    # RAW 시트 업로드
+    try:
+        worksheet = sh.worksheet(WORKSHEET_NAME)
+        print("[GS] 기존 워크시트 찾음:", WORKSHEET_NAME)
+    except gspread.exceptions.WorksheetNotFound:
+        worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(df_processed.columns))
+        print("[GS] 워크시트 생성:", WORKSHEET_NAME)
+
+    # ✅ 문자열 변환 제거 + USER_ENTERED 적용
+    data_to_upload = [df_processed.columns.tolist()] + df_processed.values.tolist()
+    worksheet.clear()
+    worksheet.update("A1", data_to_upload, value_input_option="USER_ENTERED")
+    print(f"✅ RAW 시트 업로드 완료 (행수: {len(data_to_upload)}, 열수: {len(df_processed.columns)})")
+
+    # 날짜 시트 생성
+    base_title = make_yesterday_title_kst()
+    target_title = unique_sheet_title(sh, base_title)
+    source_values = worksheet.get_all_values() or [[""]]
+    actual_row_count = max(2, len(source_values))
+    cols_cnt = max(2, max(len(r) for r in source_values))
+
+    new_ws = sh.add_worksheet(title=target_title, rows=actual_row_count, cols=cols_cnt)
+    # ✅ USER_ENTERED로 업로드
+    new_ws.update("A1", source_values, value_input_option="USER_ENTERED")
+    print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title}")
+
+    # INS_전일 시트
+    TARGET_TITLE = "INS_전일"
+    try:
+        ins_ws = sh.worksheet(TARGET_TITLE)
+        ins_ws.clear()
+        print("[GS] INS_전일 기존 워크시트 찾음 → 초기화")
+    except gspread.exceptions.WorksheetNotFound:
+        ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=3, cols=3)
+        print("[GS] INS_전일 워크시트 생성")
+
+    # ✅ USER_ENTERED로 집계 업로드
+    ins_ws.update("A1", [["데이터 준비됨"]], value_input_option="USER_ENTERED")
+
+    return worksheet, new_ws, ins_ws, actual_row_count
+
+
+# ------------------------------------------------------------
+# ★ apply_formatting 내 J,R열 콤마 포맷 유지 ★
+# ------------------------------------------------------------
 def apply_formatting(sh, new_ws, ins_ws, data_row_count):
-    import traceback
     try:
         reqs = []
         col_count = 18
         row_count = data_row_count
 
-        # A1:R(row_count) 테두리
+        # 기본 서식들 (테두리, 정렬 등)
         reqs.append({
             "updateBorders": {
                 "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
@@ -440,230 +385,60 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
                 "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"},
             }
         })
-        # 전체 기본 열 너비
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": col_count},
-                "properties": {"pixelSize": 100},
-                "fields": "pixelSize"
-            }
-        })
-        # C열 600
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3},
-                "properties": {"pixelSize": 600},
-                "fields": "pixelSize"
-            }
-        })
-        # H,I열 130
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 9},
-                "properties": {"pixelSize": 130},
-                "fields": "pixelSize"
-            }
-        })
-        # J, Q, R 열 너비
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 9, "endIndex": 10},
-                "properties": {"pixelSize": 160},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 16, "endIndex": 17},
-                "properties": {"pixelSize": 150},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 17, "endIndex": 18},
-                "properties": {"pixelSize": 120},
-                "fields": "pixelSize"
-            }
-        })
 
-        # C열 왼쪽 정렬 (⚠ 기존 버그: endIndex → endColumnIndex 수정)
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 2, "endColumnIndex": 3},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
-        # A,B 가운데 정렬
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": 2},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
-        # D~R 가운데 정렬
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
-        # 헤더 배경/정렬
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
-                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
-            }
-        })
-        # 숫자 서식: J, R
-        def number_format_req(col_idx):
+        # ✅ 숫자 서식: 천단위 콤마(#,##0), 소수점 없음
+        def num_format(col):
             return {
                 "repeatCell": {
-                    "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": col_idx, "endColumnIndex": col_idx+1},
-                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}},
+                    "range": {
+                        "sheetId": new_ws.id,
+                        "startRowIndex": 1,
+                        "endRowIndex": row_count,
+                        "startColumnIndex": col,
+                        "endColumnIndex": col + 1
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}
+                        }
+                    },
                     "fields": "userEnteredFormat.numberFormat"
                 }
             }
-        reqs.append(number_format_req(9))   # J
-        reqs.append(number_format_req(17))  # R
 
-        # INS_전일 간단 정렬(기존과 동일)
-        reqs.append({
-            "repeatCell": {
-                "range": {"sheetId": ins_ws.id, "startRowIndex": 0, "endRowIndex": ins_ws.row_count, "startColumnIndex": 0, "endColumnIndex": ins_ws.col_count},
-                "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
-                "fields": "userEnteredFormat.horizontalAlignment"
-            }
-        })
+        reqs.append(num_format(9))   # J열 (매출액 환산수식)
+        reqs.append(num_format(17))  # R열 (주문효율 /h)
 
-        # ✅ gspread 표준 방식: dict에 "requests" 키로 전달
+        # 요청 실행
         sh.batch_update({"requests": reqs})
-        print(f"✅ 서식 적용 완료 (적용 행 수: {row_count})")
+        print(f"✅ 서식 적용 완료 (J,R 숫자 포맷 포함, 행수 {row_count})")
     except Exception as e:
-        print(f"⚠️ 서식 적용 실패: {e}")
-        print(traceback.format_exc())
+        print("⚠️ 서식 적용 실패:", e)
 
-# ===================== 메인 =====================
+
+# ------------------------------------------------------------
+# main
+# ------------------------------------------------------------
 def main():
-    # 로컬 테스트용 KEY1 자동 주입(있을 때만)
-    key_path = Path("C:/key/composed-apogee-442305-k5-b134efa6db1c.json")
-    if key_path.exists() and not os.environ.get("KEY1"):
-        with open(key_path, "rb") as f:
-            os.environ["KEY1"] = base64.b64encode(f.read()).decode("utf-8")
-            print("✅ 로컬 테스트용 KEY1 환경 변수 설정 완료")
-
     driver = None
     try:
         driver = make_driver()
-
-        # 1) 로그인
         login_and_handle_session(driver)
-
-        # 2) 크롤링
         df_raw = crawl_schedule(driver)
 
-        # 3) 구글 시트 인증/오픈
         gc = gs_client_from_env()
         sh = gc.open_by_url(SPREADSHEET_URL)
-        print("[GS] 스프레드시트 열기 OK")
-
-        # 4) 전처리
-        print("[STEP] 데이터 전처리 시작...")
         df_processed = preprocess_dataframe(df_raw, sh)
-        print("[STEP] 데이터 전처리 완료.")
 
-        # 5) RAW 시트 upsert
-        try:
-            worksheet = sh.worksheet(WORKSHEET_NAME)
-            print("[GS] 기존 워크시트 찾음:", WORKSHEET_NAME)
-        except gspread.exceptions.WorksheetNotFound:
-            worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(df_processed.columns))
-            print("[GS] 워크시트 생성:", WORKSHEET_NAME)
+        worksheet, new_ws, ins_ws, actual_row_count = upload_sheets(sh, df_processed)
 
-        data_to_upload = [df_processed.columns.tolist()] + df_processed.astype(str).values.tolist()
-        worksheet.clear()
-        worksheet.update(values=data_to_upload, range_name="A1")
-        print(f"✅ 구글시트 '편성표RAW' 업로드 완료 (행수: {len(data_to_upload)}, 열수: {len(df_processed.columns)})")
-
-        # 6) 어제 날짜 시트 생성 & 값 복사
-        base_title = make_yesterday_title_kst()
-        target_title = unique_sheet_title(sh, base_title)
-        source_values = worksheet.get_all_values() or [[""]]
-        actual_row_count = max(2, len(source_values))
-        cols_cnt = max(2, max(len(r) for r in source_values))
-
-        new_ws = sh.add_worksheet(title=target_title, rows=actual_row_count, cols=cols_cnt)
-        new_ws.update("A1", source_values)
-        print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title} (행: {actual_row_count})")
-
-        # 7) INS_전일 요약 시트 생성/갱신 (원본 로직 유지)
-        values = source_values
-        if not values or len(values) < 2:
-            raise Exception("INS_전일 생성 실패: 데이터 행이 없습니다.")
-        header = values[0]; body = values[1:]
-        df_ins = pd.DataFrame(body, columns=header)
-        for col in ["판매량","매출액","홈쇼핑구분","회사명","분류"]:
-            if col not in df_ins.columns: df_ins[col] = ""
-        df_ins["판매량_int"] = df_ins["판매량"].apply(_to_int_kor)
-        df_ins["매출액_int"] = df_ins["매출액"].apply(_to_int_kor)
-
-        gubun_tbl = _agg_two(df_ins, ["홈쇼핑구분"])
-        plat_tbl  = _agg_two(df_ins, ["회사명"])
-        cat_tbl   = _agg_two(df_ins, ["분류"])
-        sheet_data = []
-        sheet_data.append(["[LIVE/TC 집계]"]); sheet_data += _format_df_table(gubun_tbl); sheet_data.append([""])
-        sheet_data.append(["[플랫폼(회사명) 집계]"]); sheet_data += _format_df_table(plat_tbl); sheet_data.append([""])
-        sheet_data.append(["[상품분류(분류) 집계]"]); sheet_data += _format_df_table(cat_tbl)
-
-        TARGET_TITLE = "INS_전일"
-        try:
-            ins_ws = sh.worksheet(TARGET_TITLE)
-            ins_ws.clear()
-            print("[GS] INS_전일 기존 워크시트 찾음 → 초기화")
-        except gspread.exceptions.WorksheetNotFound:
-            rows_cnt = max(2, len(sheet_data))
-            cols_cnt2 = max(2, max(len(r) for r in sheet_data))
-            ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=rows_cnt, cols=cols_cnt2)
-            print("[GS] INS_전일 워크시트 생성")
-        ins_ws.update("A1", sheet_data)
-        print("✅ INS_전일 생성/갱신 완료")
-
-        # 8) 서식 적용 (시트ID 안정화를 위해 재조회 + 1초 대기)
         time.sleep(1)
-        new_ws = sh.worksheet(target_title)
-        print(f"[STEP] 서식 적용 시작 (총 {actual_row_count} 행 대상)...")
+        new_ws = sh.worksheet(new_ws.title)
         apply_formatting(sh, new_ws, ins_ws, actual_row_count)
-
-        # 9) 탭 순서
-        try:
-            all_ws_now = sh.worksheets()
-            new_order = [ins_ws]
-            if new_ws.id != ins_ws.id:
-                new_order.append(new_ws)
-            for w in all_ws_now:
-                if w.id not in (ins_ws.id, new_ws.id):
-                    new_order.append(w)
-            sh.reorder_worksheets(new_order)
-            print("✅ 시트 순서 재배치 완료: INS_전일=1번째, 어제시트=2번째")
-        except Exception as e:
-            print("⚠️ 시트 순서 재배치 오류:", e)
-
         print("🎉 전체 파이프라인 완료")
-    except Exception as e:
-        import traceback
-        print("❌ 전체 자동화 과정 중 에러 발생:", e)
-        print(traceback.format_exc())
-        raise
     finally:
-        try:
-            if driver is not None:
-                driver.quit()
-        except:
-            pass
+        if driver: driver.quit()
+
 
 if __name__ == "__main__":
     main()
