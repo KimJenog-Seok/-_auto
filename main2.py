@@ -287,7 +287,9 @@ def preprocess_dataframe(df_raw, sh):
     print("🧮 데이터 전처리 시작")
     df = df_raw.copy()
 
-    # ... (중간 동일)
+    # 매출액 환산수식 보정 (없을 경우 생성)
+    if "매출액 환산수식" not in df.columns:
+        df["매출액 환산수식"] = df["매출액"].apply(_to_int_kor)
 
     # 주문효율 계산
     def safe_eff(sales, adj):
@@ -442,3 +444,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
