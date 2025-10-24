@@ -585,30 +585,40 @@ def main():
             worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(df_processed.columns))
             print("[GS] 워크시트 생성:", WORKSHEET_NAME)
 
-        data_to_upload = [df_processed.columns.tolist()] + df_processed.astype(str).values.tolist()
+        # 💡 [수정] .astype(str) -> .fillna("")로 변경 (숫자 타입 유지)
+        df_for_upload = df_processed.fillna("")
+        data_to_upload = [df_for_upload.columns.tolist()] + df_for_upload.values.tolist()
+        
         worksheet.clear()
+        # 💡 [수정] 경고 로그(DeprecationWarning) 해결: 명명된 인수 사용
         worksheet.update(values=data_to_upload, range_name="A1")
         print(f"✅ 구글시트 '편성표RAW' 업로드 완료 (행수: {len(data_to_upload)}, 열수: {len(df_processed.columns)})")
 
         # 6) 어제 날짜 시트 생성 & 값 복사
         base_title = make_yesterday_title_kst()
         target_title = unique_sheet_title(sh, base_title)
-        source_values = worksheet.get_all_values() or [[""]]
+        
+        # 💡 [수정] 불필요한 API 호출(get_all_values) 대신, 메모리의 data_to_upload 재사용
+        source_values = data_to_upload
         actual_row_count = max(2, len(source_values))
         cols_cnt = max(2, max(len(r) for r in source_values))
 
         new_ws = sh.add_worksheet(title=target_title, rows=actual_row_count, cols=cols_cnt)
-        new_ws.update("A1", source_values)
+        
+        # 💡 [수정] 경고 로그(DeprecationWarning) 해결: 명명된 인수 사용
+        new_ws.update(values=source_values, range_name="A1")
         print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title} (행: {actual_row_count})")
 
         # 7) INS_전일 요약 시트 생성/갱신 (원본 로직 유지)
-        values = source_values
+        values = source_values # 💡 source_values가 이미 올바른 데이터를 가짐
         if not values or len(values) < 2:
             raise Exception("INS_전일 생성 실패: 데이터 행이 없습니다.")
         header = values[0]; body = values[1:]
         df_ins = pd.DataFrame(body, columns=header)
         for col in ["판매량","매출액","홈쇼핑구분","회사명","분류"]:
             if col not in df_ins.columns: df_ins[col] = ""
+            
+        # 💡 [참고] 이 부분은 원본 데이터(숫자)를 쓰도록 이미 수정되었으므로 그대로 둡니다.
         df_ins["판매량_int"] = df_ins["판매량"].apply(_to_int_kor)
         df_ins["매출액_int"] = df_ins["매출액"].apply(_to_int_kor)
 
@@ -629,15 +639,17 @@ def main():
             rows_cnt = max(2, len(sheet_data))
             cols_cnt2 = max(2, max(len(r) for r in sheet_data))
             ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=rows_cnt, cols=cols_cnt2)
-            print("[GS] INS_전일 워크시T 생성")
-        ins_ws.update("A1", sheet_data)
+            print("[GS] INS_전일 워크시트 생성")
+            
+        # 💡 [수정] 경고 로그(DeprecationWarning) 해결: 명명된 인수 사용
+        ins_ws.update(values=sheet_data, range_name="A1")
         print("✅ INS_전일 생성/갱신 완료")
 
         # 8) 서식 적용 (시트ID 안정화를 위해 재조회 + 1초 대기)
         time.sleep(1)
         new_ws = sh.worksheet(target_title)
         print(f"[STEP] 서식 적용 시작 (총 {actual_row_count} 행 대상)...")
-        apply_formatting(sh, new_ws, ins_ws, actual_row_count)
+        apply_formatting(sh, new_ws, ins_ws, actual_row_count) # 💡 서식 함수는 수정 없이 그대로 호출
 
         # 9) 탭 순서
         try:
@@ -666,5 +678,7 @@ def main():
         except:
             pass
 
+# 💡 __name__ == "__main__": 부분은 수정 없이 그대로입니다.
 if __name__ == "__main__":
     main()
+
