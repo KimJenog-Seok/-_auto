@@ -126,7 +126,7 @@ def crawl_schedule(driver):
     print("✅ 편성표 홈쇼핑 페이지로 직접 이동 완료")
     time.sleep(2)
 
-    # 어제 날짜 클릭 (간단 구현: UI 텍스트 기준)
+    # 어제 날짜 클릭 (간단 구현: UI text 기준)
     KST = timezone(timedelta(hours=9))
     yesterday = datetime.now(KST).date() - timedelta(days=1)
     date_text = str(yesterday.day)
@@ -154,8 +154,21 @@ def crawl_schedule(driver):
             for row in rows:
                 cols = row.find_elements(By.TAG_NAME, "td")
                 if len(cols) >= 7:
+                    
+                    # 💡 [수정] cols[1] (방송시간) 내부의 span 2개를 찾아 '\n'으로 연결
+                    try:
+                        spans = cols[1].find_elements(By.TAG_NAME, "span")
+                        if len(spans) == 2:
+                            broadcast_time = f"{spans[0].text.strip()}\n{spans[1].text.strip()}"
+                        else:
+                            # <span>이 2개가 아닌 경우 (예상치 못한 구조) 대비
+                            broadcast_time = cols[1].text.strip()
+                    except Exception:
+                        # 예외 발생 시 기존 방식(텍스트 통째로) 사용
+                        broadcast_time = cols[1].text.strip()
+
                     item = {
-                        "방송시간": cols[1].text.strip(),
+                        "방송시간": broadcast_time, # 💡 수정된 broadcast_time 사용
                         "방송정보": cols[2].text.strip(),
                         "분류":   cols[3].text.strip(),
                         "판매량":  cols[4].text.strip(),
@@ -220,7 +233,7 @@ def split_company_from_broadcast(text):
         if re.search(pattern, t):
             cleaned = re.sub(pattern, "", t).rstrip()
             return cleaned, key, PLATFORM_MAP[key]
-    return text, "", ""
+    return text, "", "" # 💡 맵에 없으면 TC가 아닌 빈칸("") 반환 (기존 로직)
 
 def _to_int_kor(s):
     # 안전한 한글 단위 변환 (빈값/하이픈/콤마/공백 대응)
@@ -285,14 +298,16 @@ def preprocess_dataframe(df_raw, sh):
     print("🧮 데이터 전처리 시작")
     df = df_raw.copy()
 
-    # 방송날짜/시작시간 분리
+    # 방송날짜/시작시간 분리 (💡 crawl_schedule 수정으로 \n이 보장됨)
     split_result = df["방송시간"].str.split("\n", n=1, expand=True)
     if len(split_result.columns) == 2:
         df["방송날짜"]     = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
         df["방송시작시간"] = split_result[1].str.strip()
     else:
+        # 💡 (Fallback) \n이 여전히 없는 경우 (예: crawl_schedule에서 예외 발생)
         df["방송날짜"]     = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
         df["방송시작시간"] = ""
+        print("⚠️ 일부 데이터에서 날짜/시간 분리 실패 (\\n 없음)")
 
     # 어제 날짜(종료시간 계산용)
     try:
@@ -422,7 +437,7 @@ def preprocess_dataframe(df_raw, sh):
     df_final = df[final_cols].rename(columns={"상품명": "방송정보"})
     print("✅ 데이터 전처리 완료 (18개 열 생성)")
     return df_final
-    
+
 # ===================== 서식 적용 =====================
 def apply_formatting(sh, new_ws, ins_ws, data_row_count):
     import traceback
@@ -514,18 +529,18 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         # 헤더 배경/정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
                 "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
             }
         })
         
-        # 💡 [최종 수정] 숫자 서식: J, R (콤마O, 소수점X 정수)
+        # 💡 [오전 수정] 숫자 서식: J, R (콤마O, 소수점X 정수)
         def number_format_req(col_idx):
             return {
                 "repeatCell": {
                     "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": col_idx, "endColumnIndex": col_idx+1},
-                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}}, # 💡 "1,000" 형태
+                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}}, # "1,000" 형태
                     "fields": "userEnteredFormat.numberFormat"
                 }
             }
@@ -564,7 +579,7 @@ def main():
         # 1) 로그인
         login_and_handle_session(driver)
 
-        # 2) 크롤링
+        # 2) 크롤링 (💡 crawl_schedule 수정됨)
         df_raw = crawl_schedule(driver)
 
         # 3) 구글 시트 인증/오픈
@@ -572,12 +587,12 @@ def main():
         sh = gc.open_by_url(SPREADSHEET_URL)
         print("[GS] 스프레드시트 열기 OK")
 
-        # 4) 전처리
+        # 4) 전처리 (💡 preprocess_dataframe이 수정된 데이터 처리)
         print("[STEP] 데이터 전처리 시작...")
         df_processed = preprocess_dataframe(df_raw, sh)
         print("[STEP] 데이터 전처리 완료.")
 
-        # 5) RAW 시트 upsert
+        # 5) RAW 시트 upsert (💡 정렬 안 함, fillna 적용)
         try:
             worksheet = sh.worksheet(WORKSHEET_NAME)
             print("[GS] 기존 워크시트 찾음:", WORKSHEET_NAME)
@@ -585,40 +600,53 @@ def main():
             worksheet = sh.add_worksheet(title=WORKSHEET_NAME, rows=2, cols=len(df_processed.columns))
             print("[GS] 워크시트 생성:", WORKSHEET_NAME)
 
-        # 💡 [수정] .astype(str) -> .fillna("")로 변경 (숫자 타입 유지)
+        # 💡 [오전 수정] .fillna("") 사용 (숫자 타입 유지)
         df_for_upload = df_processed.fillna("")
         data_to_upload = [df_for_upload.columns.tolist()] + df_for_upload.values.tolist()
         
         worksheet.clear()
-        # 💡 [수정] 경고 로그(DeprecationWarning) 해결: 명명된 인수 사용
+        # 💡 [오전 수정] 경고 로그 해결 (명명된 인수 사용)
         worksheet.update(values=data_to_upload, range_name="A1")
         print(f"✅ 구글시트 '편성표RAW' 업로드 완료 (행수: {len(data_to_upload)}, 열수: {len(df_processed.columns)})")
 
-        # 6) 어제 날짜 시트 생성 & 값 복사
+
+        # 6) 💡 [오후 수정] 어제 날짜 시트 생성 (정렬 추가)
         base_title = make_yesterday_title_kst()
         target_title = unique_sheet_title(sh, base_title)
+
+        print(f"[STEP] 백업 시트 정렬 수행: 회사명(오름차순), 방송시작시간(오름차순)")
+        # 💡 정렬 수행
+        df_sorted_backup = df_processed.sort_values(
+            by=["회사명", "방송시작시간"], 
+            ascending=[True, True]
+        )
+
+        # 💡 정렬된 데이터프레임을 업로드용 리스트로 변환
+        df_backup_upload = df_sorted_backup.fillna("")
+        source_values_sorted = [df_backup_upload.columns.tolist()] + df_backup_upload.values.tolist()
         
-        # 💡 [수정] 불필요한 API 호출(get_all_values) 대신, 메모리의 data_to_upload 재사용
-        source_values = data_to_upload
-        actual_row_count = max(2, len(source_values))
-        cols_cnt = max(2, max(len(r) for r in source_values))
+        actual_row_count = max(2, len(source_values_sorted))
+        cols_cnt = max(2, max(len(r) for r in source_values_sorted))
 
         new_ws = sh.add_worksheet(title=target_title, rows=actual_row_count, cols=cols_cnt)
         
-        # 💡 [수정] 경고 로그(DeprecationWarning) 해결: 명명된 인수 사용
-        new_ws.update(values=source_values, range_name="A1")
-        print(f"✅ 어제 날짜 시트 생성/복사 완료 → {target_title} (행: {actual_row_count})")
+        # 💡 [오전 수정] 경고 로그 해결 + 정렬된(source_values_sorted) 데이터로 업로드
+        new_ws.update(values=source_values_sorted, range_name="A1")
+        print(f"✅ 어제 날짜 시트 생성/복사/정렬 완료 → {target_title} (행: {actual_row_count})")
 
-        # 7) INS_전일 요약 시트 생성/갱신 (원본 로직 유지)
-        values = source_values # 💡 source_values가 이미 올바른 데이터를 가짐
+
+        # 7) INS_전일 요약 시트 (💡 정렬되지 않은 원본 RAW 데이터 사용)
+        
+        # 💡 'INS_전일' 집계는 정렬 전 원본(data_to_upload)을 사용
+        values = data_to_upload 
         if not values or len(values) < 2:
             raise Exception("INS_전일 생성 실패: 데이터 행이 없습니다.")
+        
         header = values[0]; body = values[1:]
         df_ins = pd.DataFrame(body, columns=header)
         for col in ["판매량","매출액","홈쇼핑구분","회사명","분류"]:
             if col not in df_ins.columns: df_ins[col] = ""
             
-        # 💡 [참고] 이 부분은 원본 데이터(숫자)를 쓰도록 이미 수정되었으므로 그대로 둡니다.
         df_ins["판매량_int"] = df_ins["판매량"].apply(_to_int_kor)
         df_ins["매출액_int"] = df_ins["매출액"].apply(_to_int_kor)
 
@@ -641,15 +669,15 @@ def main():
             ins_ws = sh.add_worksheet(title=TARGET_TITLE, rows=rows_cnt, cols=cols_cnt2)
             print("[GS] INS_전일 워크시트 생성")
             
-        # 💡 [수정] 경고 로그(DeprecationWarning) 해결: 명명된 인수 사용
+        # 💡 [오전 수정] 경고 로그 해결
         ins_ws.update(values=sheet_data, range_name="A1")
         print("✅ INS_전일 생성/갱신 완료")
 
-        # 8) 서식 적용 (시트ID 안정화를 위해 재조회 + 1초 대기)
+        # 8) 서식 적용
         time.sleep(1)
         new_ws = sh.worksheet(target_title)
         print(f"[STEP] 서식 적용 시작 (총 {actual_row_count} 행 대상)...")
-        apply_formatting(sh, new_ws, ins_ws, actual_row_count) # 💡 서식 함수는 수정 없이 그대로 호출
+        apply_formatting(sh, new_ws, ins_ws, actual_row_count)
 
         # 9) 탭 순서
         try:
@@ -678,8 +706,5 @@ def main():
         except:
             pass
 
-# 💡 __name__ == "__main__": 부분은 수정 없이 그대로입니다.
 if __name__ == "__main__":
     main()
-
-
