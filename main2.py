@@ -281,10 +281,10 @@ def format_num(v):
 
 def _agg_two(df, group_cols):
     g = (df.groupby(group_cols, dropna=False)
-           .agg(매출합=("매출액_int","sum"),
-                판매량합=("판매량_int","sum"))
-           .reset_index()
-           .sort_values("매출합", ascending=False))
+            .agg(매출합=("매출액_int","sum"),
+                 판매량합=("판매량_int","sum"))
+            .reset_index()
+            .sort_values("매출합", ascending=False))
     return g
 
 def _format_df_table(df):
@@ -301,11 +301,11 @@ def preprocess_dataframe(df_raw, sh):
     # 방송날짜/시작시간 분리 (💡 crawl_schedule 수정으로 \n이 보장됨)
     split_result = df["방송시간"].str.split("\n", n=1, expand=True)
     if len(split_result.columns) == 2:
-        df["방송날짜"]     = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
+        df["방송날짜"]      = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
         df["방송시작시간"] = split_result[1].str.strip()
     else:
         # 💡 (Fallback) \n이 여전히 없는 경우 (예: crawl_schedule에서 예외 발생)
-        df["방송날짜"]     = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
+        df["방송날짜"]      = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
         df["방송시작시간"] = ""
         print("⚠️ 일부 데이터에서 날짜/시간 분리 실패 (\\n 없음)")
 
@@ -361,7 +361,7 @@ def preprocess_dataframe(df_raw, sh):
         print(f"⚠️ '기준가치' 시트 로드 또는 매핑 오류: {e}")
         df["환산가치"] = 0.0
 
-    # 종료시간 계산
+    # 💡 [수정 시작] 종료시간 계산 (분리송출 대응 로직)
     def to_dt(hhmm):
         try:
             h, m = map(int, str(hhmm).split(":"))
@@ -370,14 +370,26 @@ def preprocess_dataframe(df_raw, sh):
             return pd.NaT
 
     df["_start_dt"] = df["방송시작시간"].apply(to_dt)
-    df_sorted = df.sort_values(["회사명", "_start_dt"]).reset_index()
-    df_sorted["_next_same"] = df_sorted.groupby("회사명")["_start_dt"].shift(-1)
-    next_same_map = dict(zip(df_sorted["index"], df_sorted["_next_same"]))
-    df["_next_same"] = df.index.map(next_same_map)
+
+    # 1. 회사명, 시작시간으로 정렬
+    df_sorted = df.sort_values(["회사명", "_start_dt"])
+    
+    # 2. 회사별로 유니크한 시작 시간만 추출
+    df_unique_starts = df_sorted.drop_duplicates(subset=["회사명", "_start_dt"])[["회사명", "_start_dt"]].copy()
+    
+    # 3. 유니크한 시작 시간 목록에서 '다음' 유니크 시작 시간을 찾음
+    df_unique_starts["_next_unique_start"] = df_unique_starts.groupby("회사명")["_start_dt"].shift(-1)
+
+    # 4. (회사명, 시작시간)을 키로 하여, 원래 df에 '다음 유니크 시작 시간'을 매핑
+    df = df.merge(
+        df_unique_starts,
+        on=["회사명", "_start_dt"],
+        how="left"
+    )
 
     def decide_end(row):
         st = row["_start_dt"]
-        et = row["_next_same"]
+        et = row["_next_unique_start"] # 💡 _next_same 대신 _next_unique_start 사용
         if pd.isna(st):
             return pd.NaT
         if pd.isna(et):
@@ -387,6 +399,7 @@ def preprocess_dataframe(df_raw, sh):
         return et
 
     df["_end_dt"] = df.apply(decide_end, axis=1)
+    # 💡 [수정 완료]
 
     def format_end(end_dt):
         if isinstance(end_dt, datetime):
@@ -709,4 +722,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
