@@ -526,16 +526,16 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
-        # 헤더 배경/정렬
+        # 헤더 배경/정렬 (💡 requests[10] - 여기가 에러 지점)
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count},
+                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count}, # 💡 "endColumnIndex"가 맞습니다.
                 "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
             }
         })
         
-        # 💡 [오전 수정] 숫자 서식: J, R (콤마O, 소수점X 정수)
+        # 숫자 서식: J, R (콤마O, 소수점X 정수)
         def number_format_req(col_idx):
             return {
                 "repeatCell": {
@@ -562,6 +562,7 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
     except Exception as e:
         print(f"⚠️ 서식 적용 실패: {e}")
         print(traceback.format_exc())
+
 
 # ===================== 메인 =====================
 def main():
@@ -708,3 +709,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
