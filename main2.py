@@ -422,7 +422,7 @@ def preprocess_dataframe(df_raw, sh):
     df_final = df[final_cols].rename(columns={"상품명": "방송정보"})
     print("✅ 데이터 전처리 완료 (18개 열 생성)")
     return df_final
-
+    
 # ===================== 서식 적용 =====================
 def apply_formatting(sh, new_ws, ins_ws, data_row_count):
     import traceback
@@ -520,12 +520,12 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
             }
         })
         
-        # 💡 [수정] 숫자 서식: J, R (콤마X, 소수점X 정수)
+        # 💡 [최종 수정] 숫자 서식: J, R (콤마O, 소수점X 정수)
         def number_format_req(col_idx):
             return {
                 "repeatCell": {
                     "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": col_idx, "endColumnIndex": col_idx+1},
-                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}}, # 💡 수정: #,##0 -> 0
+                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}}, # 💡 "1,000" 형태
                     "fields": "userEnteredFormat.numberFormat"
                 }
             }
@@ -681,4 +681,5 @@ def main():
 # 💡 __name__ == "__main__": 부분은 수정 없이 그대로입니다.
 if __name__ == "__main__":
     main()
+
 
