@@ -14,6 +14,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# 🔥 OpenAI (카테고리 분류용)
+from openai import OpenAI
+
 # ===================== 설정 =====================
 WAIT = 5
 ARTIFACT_DIR = Path("artifacts")
@@ -337,7 +340,6 @@ def preprocess_dataframe(df_raw, sh):
         df["일자"] = pd.to_datetime(df["방송날짜"]).dt.day.astype(str) + "일"
         df["시간대"] = pd.to_datetime(df["방송시작시간"], format="%H:%M", errors="coerce").dt.hour.astype(str)
 
-        # 💡 [수정 1] '환산가치'가 아닌 '_시간당_환산가치' (임시 열)에 저장합니다.
         def lookup_value(row):
             h = row["시간대"]
             d = row["일자"]
@@ -349,14 +351,14 @@ def preprocess_dataframe(df_raw, sh):
                 pass
             return 0.0
 
-        df["_시간당_환산가치"] = df.apply(lookup_value, axis=1) # 💡 임시 열
+        df["_시간당_환산가치"] = df.apply(lookup_value, axis=1)
         print("✅ 기준가치 시트 매핑 완료")
     except Exception as e:
         print(f"⚠️ '기준가치' 시트 로드 또는 매핑 오류: {e}")
-        df["_시간당_환산가치"] = 0.0 # 💡 임시 열
-        df["환산가치"] = 0.0 # 💡 최종 열(오류 시)
+        df["_시간당_환산가치"] = 0.0
+        df["환산가치"] = 0.0
 
-    # 종료시간 계산 (이전 수정 - 분리송출 대응 로직)
+    # 종료시간 계산
     def to_dt(hhmm):
         try:
             h, m = map(int, str(hhmm).split(":"))
@@ -411,8 +413,7 @@ def preprocess_dataframe(df_raw, sh):
 
     df["방송시간 절대시"] = df.apply(lambda r: fmt_duration(r["_start_dt"], r["_end_dt"]), axis=1)
     
-    # --- 💡 [신규 로직 시작] ---
-    # '방송시간 절대시'를 '분'으로 변환
+    # 방송시간(분)
     def _to_minutes(hhmm):
         try:
             h, m = map(int, str(hhmm).split(":"))
@@ -422,34 +423,22 @@ def preprocess_dataframe(df_raw, sh):
             
     df["_방송시간(분)"] = df["방송시간 절대시"].apply(_to_minutes)
 
-    # 실제 방송 시간에 비례한 '환산가치' 계산
     def calculate_actual_value(row):
         per_hour_value = row["_시간당_환산가치"]
         minutes = row["_방송시간(분)"]
-        
-        # 60분(1시간) 기준값이 0이거나 방송시간이 0분이면, 최종 환산가치도 0
         if per_hour_value == 0.0 or minutes == 0:
             return 0.0
-        
-        # (시간당 기준값 / 60분) * 실제 방송 분
         return (per_hour_value / 60.0) * minutes
 
-    # '환산가치' 열이 없는 경우(try-except 실패 시)를 대비해 생성
     if "환산가치" not in df.columns:
         df["환산가치"] = 0.0
-        
     df["환산가치"] = df.apply(calculate_actual_value, axis=1)
-    # --- 💡 [신규 로직 종료] ---
 
-
-    # 분리송출 (💡 순서 중요: '환산가치'가 계산된 *이후*에 실행되어야 함)
+    # 분리송출
     grp_counts = df.groupby(["회사명", "방송시작시간"])["방송시작시간"].transform("size")
     df["분리송출구분"] = grp_counts.apply(lambda x: "분리송출" if x > 1 else "일반")
-    
-    # 💡 이 계산은 자동으로 위 [신규 로직]에서 계산된 '환산가치'를 사용합니다.
     df["분리송출고려환산가치"] = df["환산가치"] / grp_counts.clip(lower=1)
 
-    # 주문효율 (💡 이 계산은 자동으로 위 '분리송출고려환산가치'를 사용합니다)
     def safe_eff(sales, adj):
         try:
             adjf = float(adj)
@@ -471,18 +460,20 @@ def preprocess_dataframe(df_raw, sh):
     print("✅ 데이터 전처리 완료 (18개 열 생성)")
     return df_final
 
-# ===================== 서식 적용 =====================
+# ===================== 서식 적용 (S열까지 포함) =====================
 def apply_formatting(sh, new_ws, ins_ws, data_row_count):
     import traceback
     try:
         reqs = []
-        col_count = 18
+        col_count = 19  # ⭐ A~S열
         row_count = data_row_count
 
-        # A1:R(row_count) 테두리
+        # A1:S(row_count) 테두리
         reqs.append({
             "updateBorders": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
+                "range": {"sheetId": new_ws.id,
+                          "startRowIndex": 0, "endRowIndex": row_count,
+                          "startColumnIndex": 0, "endColumnIndex": col_count},
                 "top": {"style": "SOLID"}, "bottom": {"style": "SOLID"},
                 "left": {"style": "SOLID"}, "right": {"style": "SOLID"},
                 "innerHorizontal": {"style": "SOLID"}, "innerVertical": {"style": "SOLID"},
@@ -491,7 +482,8 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         # 전체 기본 열 너비
         reqs.append({
             "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": col_count},
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS",
+                          "startIndex": 0, "endIndex": col_count},
                 "properties": {"pixelSize": 100},
                 "fields": "pixelSize"
             }
@@ -499,7 +491,8 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         # C열 600
         reqs.append({
             "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 2, "endIndex": 3},
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS",
+                          "startIndex": 2, "endIndex": 3},
                 "properties": {"pixelSize": 600},
                 "fields": "pixelSize"
             }
@@ -507,38 +500,29 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         # H,I열 130
         reqs.append({
             "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 7, "endIndex": 9},
+                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS",
+                          "startIndex": 7, "endIndex": 9},
                 "properties": {"pixelSize": 130},
                 "fields": "pixelSize"
             }
         })
-        # J, Q, R 열 너비
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 9, "endIndex": 10},
-                "properties": {"pixelSize": 160},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 16, "endIndex": 17},
-                "properties": {"pixelSize": 150},
-                "fields": "pixelSize"
-            }
-        })
-        reqs.append({
-            "updateDimensionProperties": {
-                "range": {"sheetId": new_ws.id, "dimension": "COLUMNS", "startIndex": 17, "endIndex": 18},
-                "properties": {"pixelSize": 120},
-                "fields": "pixelSize"
-            }
-        })
+        # J, Q, R, S 열 너비 160
+        for idx in [9, 16, 17, 18]:
+            reqs.append({
+                "updateDimensionProperties": {
+                    "range": {"sheetId": new_ws.id, "dimension": "COLUMNS",
+                              "startIndex": idx, "endIndex": idx+1},
+                    "properties": {"pixelSize": 160},
+                    "fields": "pixelSize"
+                }
+            })
 
         # C열 왼쪽 정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 2, "endColumnIndex": 3},
+                "range": {"sheetId": new_ws.id,
+                          "startRowIndex": 1, "endRowIndex": row_count,
+                          "startColumnIndex": 2, "endColumnIndex": 3},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "LEFT"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
@@ -546,15 +530,19 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         # A,B 가운데 정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": 2},
+                "range": {"sheetId": new_ws.id,
+                          "startRowIndex": 0, "endRowIndex": row_count,
+                          "startColumnIndex": 0, "endColumnIndex": 2},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
-        # D~R 가운데 정렬
+        # D~S 가운데 정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": row_count, "startColumnIndex": 3, "endColumnIndex": col_count},
+                "range": {"sheetId": new_ws.id,
+                          "startRowIndex": 0, "endRowIndex": row_count,
+                          "startColumnIndex": 3, "endColumnIndex": col_count},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
@@ -562,39 +550,122 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         # 헤더 배경/정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": new_ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count}, 
-                "cell": {"userEnteredFormat": {"backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8}, "horizontalAlignment": "CENTER"}},
+                "range": {"sheetId": new_ws.id,
+                          "startRowIndex": 0, "endRowIndex": 1,
+                          "startColumnIndex": 0, "endColumnIndex": col_count}, 
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": {"red": 0.8, "green": 0.8, "blue": 0.8},
+                    "horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment)"
             }
         })
         
-        # 숫자 서식: J, R (콤마O, 소수점X 정수)
+        # 숫자 서식: J, R (콤마O, 정수)
         def number_format_req(col_idx):
             return {
                 "repeatCell": {
-                    "range": {"sheetId": new_ws.id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": col_idx, "endColumnIndex": col_idx+1},
-                    "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}}, # "1,000" 형태
+                    "range": {"sheetId": new_ws.id,
+                              "startRowIndex": 1, "endRowIndex": row_count,
+                              "startColumnIndex": col_idx, "endColumnIndex": col_idx+1},
+                    "cell": {"userEnteredFormat": {
+                        "numberFormat": {"type": "NUMBER", "pattern": "#,##0"}}},
                     "fields": "userEnteredFormat.numberFormat"
                 }
             }
         reqs.append(number_format_req(9))   # J
         reqs.append(number_format_req(17))  # R
 
-        # INS_전일 간단 정렬(기존과 동일)
+        # INS_전일 간단 정렬
         reqs.append({
             "repeatCell": {
-                "range": {"sheetId": ins_ws.id, "startRowIndex": 0, "endRowIndex": ins_ws.row_count, "startColumnIndex": 0, "endColumnIndex": ins_ws.col_count},
+                "range": {"sheetId": ins_ws.id,
+                          "startRowIndex": 0, "endRowIndex": ins_ws.row_count,
+                          "startColumnIndex": 0, "endColumnIndex": ins_ws.col_count},
                 "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
                 "fields": "userEnteredFormat.horizontalAlignment"
             }
         })
 
         sh.batch_update({"requests": reqs})
-        print(f"✅ 서식 적용 완료 (적용 행 수: {row_count})")
+        print(f"✅ 서식 적용 완료 (A~S, 적용 행 수: {row_count})")
     except Exception as e:
         print(f"⚠️ 서식 적용 실패: {e}")
         print(traceback.format_exc())
 
+# ===================== 카테고리 분류 (Assistant) =====================
+def run_category_classification(sh, target_title):
+    """
+    새로 생성된 어제자 시트(target_title)에 대해
+    방송정보를 읽고, OpenAI Assistant로 카테고리(S열)를 채웁니다.
+    """
+    print(f"[CAT] 카테고리 분류 대상 시트: {target_title}")
+
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    ASSISTANT_ID   = "asst_Nd5zLY7wqhsQqigS4YIDU5nL"
+
+    if not OPENAI_API_KEY:
+        raise RuntimeError("❌ OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    ws = sh.worksheet(target_title)
+    rows = ws.get_all_values()
+    if not rows or len(rows) < 2:
+        print("[CAT] 데이터 행이 없어 분류를 건너뜁니다.")
+        return
+
+    header = rows[0]
+    data   = rows[1:]
+    print(f"[CAT] 총 데이터 행 수: {len(data)}")
+
+    results = []
+
+    for i, row in enumerate(data, start=2):
+        title = row[2] if len(row) > 2 else ""
+        base  = row[3] if len(row) > 3 else ""
+        if not title:
+            results.append("")
+            continue
+
+        print(f"[CAT] [{i}] 분류중 → {title[:30]}...")
+
+        try:
+            # 행마다 독립 Thread 생성
+            thread = client.beta.threads.create()
+            client.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=f"{title} — {base}"
+            )
+
+            run = client.beta.threads.runs.create_and_poll(
+                thread_id=thread.id,
+                assistant_id=ASSISTANT_ID
+            )
+
+            msgs = client.beta.threads.messages.list(thread_id=thread.id)
+            result = msgs.data[0].content[0].text.value.strip()
+
+            # 결과 정제
+            result = re.sub(r"[`´]+", "", result)           # 백틱 제거
+            result = result.strip()
+            result = re.split(r"[—\-–]", result)[-1].strip()  # '상품명 — 카테고리명' 대응
+            result = result.splitlines()[0].strip()          # 첫 줄만
+
+            results.append(result)
+        except Exception as e:
+            print(f"❌ [CAT] {i}행 오류: {e}")
+            results.append("오류 발생")
+
+        time.sleep(0.3)  # 안정성용 딜레이
+
+    # S열에 배열 업데이트
+    last_row = len(data) + 1
+    update_range = f"S2:S{last_row}"
+    update_values = [[r] for r in results]
+
+    ws.update(update_range, update_values)
+    print("🎯 카테고리 분류 결과 S열 일괄 업데이트 완료")
 
 # ===================== 메인 =====================
 def main():
@@ -620,7 +691,7 @@ def main():
         sh = gc.open_by_url(SPREADSHEET_URL)
         print("[GS] 스프레드시트 열기 OK")
 
-        # 4) 전처리 (💡 수정된 preprocess_dataframe 사용)
+        # 4) 전처리
         print("[STEP] 데이터 전처리 시작...")
         df_processed = preprocess_dataframe(df_raw, sh)
         print("[STEP] 데이터 전처리 완료.")
@@ -664,7 +735,6 @@ def main():
 
 
         # 7) INS_전일 요약 시트 (정렬되지 않은 원본 RAW 데이터 사용)
-        
         values = data_to_upload 
         if not values or len(values) < 2:
             raise Exception("INS_전일 생성 실패: 데이터 행이 없습니다.")
@@ -718,6 +788,11 @@ def main():
             print("✅ 시트 순서 재배치 완료: INS_전일=1번째, 어제시트=2번째")
         except Exception as e:
             print("⚠️ 시트 순서 재배치 오류:", e)
+
+        # 🔟 카테고리 분류 실행 (새로 만든 어제자 시트 대상)
+        print("[STEP] 카테고리 분류 시작...")
+        run_category_classification(sh, target_title)
+        print("✅ 카테고리 분류 완료")
 
         print("🎉 전체 파이프라인 완료")
     except Exception as e:
