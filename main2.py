@@ -8,16 +8,16 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from gspread.utils import a1_to_rowcol # gspread 감가상각 경고 처리를 위한 import
+from gspread.utils import a1_to_rowcol 
+
+# 🔥 OpenAI (카테고리 분류용)
+from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor, as_completed 
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-
-# 🔥 OpenAI (카테고리 분류용)
-from openai import OpenAI
-from concurrent.futures import ThreadPoolExecutor, as_completed # 병렬 처리를 위해 상단으로 이동
 
 # ===================== 설정 =====================
 WAIT = 5
@@ -31,8 +31,8 @@ SCHEDULE_URL = "https://live.ecomm-data.com/schedule/hs"
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/19pcFwP2XOVEuHPsr9ITudLDSD1Tzg5RwsL3K6maIJ1U/edit?gid=0#gid=0"
 WORKSHEET_NAME = "편성표RAW"
 
-# 💡 수정 1: 오류 로그에서 확인된 유효한 Assistant ID로 직접 설정
-ASSISTANT_ID_FIXED = "asst_Nd5ZLY7wqhsQqigS4YIDU5nL" 
+# 💡 최종 수정: Assistant ID의 'Z'를 소문자 'z'로 변경하여 NotFoundError 해결 시도
+ASSISTANT_ID = "asst_Nd5zLY7wqhsQqigS4YIDU5nL" 
 
 # ===================== 유틸 =====================
 def make_driver():
@@ -354,7 +354,6 @@ def preprocess_dataframe(df_raw, sh):
         df["_시간당_환산가치"] = df.apply(lookup_value, axis=1)
         print("✅ 기준가치 매핑 완료")
     except Exception as e:
-        # ⚠️ 잠재적인 문제점 4: 디버그 정보를 추가하여 데이터 품질 문제를 확인하기 쉽게 함
         print(f"⚠️ 기준가치 시트 오류 (데이터 품질 문제): {e}")
         df["_시간당_환산가치"] = 0.0
 
@@ -433,22 +432,22 @@ def preprocess_dataframe(df_raw, sh):
 
     df["주문효율 /h"] = df.apply(lambda r: safe_eff(r["매출액 환산수식"], r["분리송출고려환산가치"]), axis=1)
 
+    # 💡 수정 2: AI분류(S열) 포함하여 19개 열 정의
     final_cols = [
         "방송날짜","방송시작시간","상품명","분류","판매량","매출액","상품수","회사명","홈쇼핑구분",
         "매출액 환산수식","일자","시간대","환산가치","종료시간","방송시간 절대시","분리송출구분",
-        "분리송출고려환산가치","주문효율 /h","AI분류" # 💡 수정 2: AI 분류 열 추가 (백업 시트에 19개 열이 필요함을 명시)
+        "분리송출고려환산가치","주문효율 /h","AI분류" 
     ]
     
     for c in final_cols:
         if c not in df.columns:
             df[c] = ""
     
-    # AI분류 열이 추가되었을 때, 데이터프레임에 빈 열을 추가 (S열)
     if "AI분류" not in df.columns:
         df["AI분류"] = ""
 
     df_final = df[final_cols].rename(columns={"상품명": "방송정보"})
-    print("✅ 데이터 전처리 완료 (19개 열 생성)") # 18개 -> 19개로 수정
+    print("✅ 데이터 전처리 완료 (19개 열 생성)") 
     return df_final
 
 # ===================== 서식 적용 (A~S 전체) =====================
@@ -597,9 +596,7 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         print(traceback.format_exc())
 
 
-# ===================== 병렬 카테고리 분류 (5개 × 100행 제한) =====================
-# from concurrent.futures import ThreadPoolExecutor, as_completed # 상단으로 이동
-
+# ===================== 병렬 카테고리 분류 (100행 제한 제거) =====================
 def classify_one_row(client, assistant_id, title, base):
     """
     단일 행 카테고리 분류 함수 (스레드에서 실행)
@@ -627,19 +624,18 @@ def classify_one_row(client, assistant_id, title, base):
         return result
 
     except Exception as e:
-        # 오류 발생 시 ID 문제 로깅은 제거하고 간결하게 처리
+        # e.message가 아닌 type(e).__name__을 반환하여 NotFoundError를 명확히 함
         return f"분류 오류: {type(e).__name__}"
 
 
 def run_category_classification(sh, target_title):
     """
-    병렬(5개)로 100행까지만 카테고리 분류하여 S열에 입력
+    병렬(5개)로 전체 행 분류
     """
     print(f"[CAT] 카테고리 분류 대상 시트: {target_title}")
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-    # 💡 수정 3: 유효한 ID 변수를 사용
-    ASSISTANT_ID = "asst_Nd5zLY7wqhsQqigS4YIDU5nL"
+    ASSISTANT_ID_TO_USE = ASSISTANT_ID 
 
     if not OPENAI_API_KEY:
         raise RuntimeError("❌ OPENAI_API_KEY 환경변수가 없습니다.")
@@ -656,8 +652,9 @@ def run_category_classification(sh, target_title):
     data   = rows[1:]
 
     total = len(data)
-    limit = 100 if total > 100 else total
-    print(f"[CAT] 총 {total}개 중 {limit}개만 병렬 분류")
+    # 💡 수정: 100행 제한을 제거하고 전체 행을 limit으로 설정
+    limit = total 
+    print(f"[CAT] 총 {total}개 중 **전체 {limit}개** 병렬 분류 시작")
 
     results = [""] * total # 전체 행 개수만큼 리스트 초기화
     tasks = []
@@ -673,20 +670,20 @@ def run_category_classification(sh, target_title):
 
             tasks.append((
                 idx,
-                executor.submit(classify_one_row, client, ASSISTANT_ID, title, base)
+                executor.submit(classify_one_row, client, ASSISTANT_ID_TO_USE, title, base)
             ))
 
         for idx, future in tasks:
             results[idx] = future.result()
-            print(f"[CAT] 완료 ← 행 {idx+2}") # 분류 완료 로그 추가
+            print(f"[CAT] 완료 ← 행 {idx+2}") 
 
     # S열 전체 업데이트 (S2:S끝)
     update_range = f"S2:S{total+1}"
-    update_values = [[r] for r in results[0:total]] # 전체 데이터 수만큼 업데이트
+    update_values = [[r] for r in results[0:total]] 
 
-    # 💡 수정 4: gspread 감가상각 경고 해결 (range_name과 values를 명시적으로 전달)
+    # 💡 수정 4: gspread 감가상각 경고 해결
     ws.update(range_name=update_range, values=update_values)
-    print("🎯 S열 카테고리 병렬 분류 완료 (100행 제한)")
+    print("🎯 S열 카테고리 병렬 분류 완료 (전체 행)")
 
 # ===================== 메인 파이프라인 =====================
 def main():
@@ -794,7 +791,7 @@ def main():
         try:
             ws_ins = sh.worksheet("INS_전일")
             ws_ins.clear()
-            # 💡 INS 시트 크기 재조정 (업데이트 오류 방지 및 데이터 무결성 확보)
+            # 💡 INS 시트 크기 재조정 
             if ws_ins.row_count < len(ins_data) or ws_ins.col_count < max_ins_cols:
                  ws_ins.resize(rows=max(2, len(ins_data)), cols=max_ins_cols)
             print("[GS] 기존 INS_전일 초기화")
@@ -808,14 +805,13 @@ def main():
         ws_ins.update(range_name="A1", values=ins_data)
         print("✅ INS_전일 생성/반영 완료")
 
-        # 8) 병렬 카테고리 분류 실행(100행 제한)
+        # 8) 병렬 카테고리 분류 실행(전체 행)
         print("[STEP] 병렬 카테고리 분류 시작…")
         run_category_classification(sh, backup_title)
         print("🎯 카테고리 분류 완료")
 
         # 9) 서식 적용(A~S 열 전체)
         print("[STEP] 서식 적용 시작…")
-        # ws_bu의 행 수가 업데이트되었을 수 있으므로 다시 가져옴
         rows_cnt_bu = ws_bu.row_count
         apply_formatting(sh, ws_bu, ws_ins, rows_cnt_bu)
         print("🎉 서식 적용 완료")
@@ -837,7 +833,6 @@ def main():
         import traceback
         print("❌ 전체 파이프라인 오류:", e)
         print(traceback.format_exc())
-        # raise # 오류 시 프로세스 중단을 위해 주석 처리 해제
     finally:
         try:
             if driver:
@@ -848,4 +843,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
