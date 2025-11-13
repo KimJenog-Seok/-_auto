@@ -28,9 +28,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install selenium pandas gspread google-auth google-auth-oauthlib
+          pip install openai   # ⭐ 추가됨
 
       - name: Run main2.py
         env:
           KEY1: ${{ secrets.KEY1 }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # ⭐ 추가됨
         run: |
           python main2.py
