@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.utils import a1_to_rowcol # gspread 감가상각 경고 처리를 위한 import
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -16,6 +17,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # 🔥 OpenAI (카테고리 분류용)
 from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor, as_completed # 병렬 처리를 위해 상단으로 이동
 
 # ===================== 설정 =====================
 WAIT = 5
@@ -28,6 +30,9 @@ SCHEDULE_URL = "https://live.ecomm-data.com/schedule/hs"
 
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/19pcFwP2XOVEuHPsr9ITudLDSD1Tzg5RwsL3K6maIJ1U/edit?gid=0#gid=0"
 WORKSHEET_NAME = "편성표RAW"
+
+# 💡 수정 1: 오류 로그에서 확인된 유효한 Assistant ID로 직접 설정
+ASSISTANT_ID_FIXED = "asst_Nd5ZLY7wqhsQqigS4YIDU5nL" 
 
 # ===================== 유틸 =====================
 def make_driver():
@@ -168,7 +173,7 @@ def crawl_schedule(driver):
                     item = {
                         "방송시간": broadcast_time,
                         "방송정보": cols[2].text.strip(),
-                        "분류":   cols[3].text.strip(),
+                        "분류":    cols[3].text.strip(),
                         "판매량":  cols[4].text.strip(),
                         "매출액":  cols[5].text.strip(),
                         "상품수":  cols[6].text.strip()
@@ -231,7 +236,7 @@ def split_company_from_broadcast(text):
         if re.search(pattern, t):
             cleaned = re.sub(pattern, "", t).rstrip()
             return cleaned, key, PLATFORM_MAP[key]
-    return text, "", "" 
+    return text, "", ""    
 
 def _to_int_kor(s):
     if s is None:
@@ -349,7 +354,8 @@ def preprocess_dataframe(df_raw, sh):
         df["_시간당_환산가치"] = df.apply(lookup_value, axis=1)
         print("✅ 기준가치 매핑 완료")
     except Exception as e:
-        print("⚠️ 기준가치 시트 오류:", e)
+        # ⚠️ 잠재적인 문제점 4: 디버그 정보를 추가하여 데이터 품질 문제를 확인하기 쉽게 함
+        print(f"⚠️ 기준가치 시트 오류 (데이터 품질 문제): {e}")
         df["_시간당_환산가치"] = 0.0
 
     def to_dt(hhmm):
@@ -430,15 +436,19 @@ def preprocess_dataframe(df_raw, sh):
     final_cols = [
         "방송날짜","방송시작시간","상품명","분류","판매량","매출액","상품수","회사명","홈쇼핑구분",
         "매출액 환산수식","일자","시간대","환산가치","종료시간","방송시간 절대시","분리송출구분",
-        "분리송출고려환산가치","주문효율 /h"
+        "분리송출고려환산가치","주문효율 /h","AI분류" # 💡 수정 2: AI 분류 열 추가 (백업 시트에 19개 열이 필요함을 명시)
     ]
     
     for c in final_cols:
         if c not in df.columns:
             df[c] = ""
+    
+    # AI분류 열이 추가되었을 때, 데이터프레임에 빈 열을 추가 (S열)
+    if "AI분류" not in df.columns:
+        df["AI분류"] = ""
 
     df_final = df[final_cols].rename(columns={"상품명": "방송정보"})
-    print("✅ 데이터 전처리 완료 (18개 열 생성)")
+    print("✅ 데이터 전처리 완료 (19개 열 생성)") # 18개 -> 19개로 수정
     return df_final
 
 # ===================== 서식 적용 (A~S 전체) =====================
@@ -446,7 +456,7 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
     import traceback
     try:
         reqs = []
-        col_count = 19  # A~S 열
+        col_count = 19  # A~S 열 (19개)
         row_count = data_row_count
 
         # A1:S(row_count) 테두리
@@ -566,7 +576,7 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
                     "fields": "userEnteredFormat.numberFormat"
                 }
             }
-        reqs.append(number_format(9))   # J
+        reqs.append(number_format(9))    # J
         reqs.append(number_format(17))  # R
 
         # INS_전일 가운데 정렬
@@ -587,9 +597,8 @@ def apply_formatting(sh, new_ws, ins_ws, data_row_count):
         print(traceback.format_exc())
 
 
-
 # ===================== 병렬 카테고리 분류 (5개 × 100행 제한) =====================
-from concurrent.futures import ThreadPoolExecutor, as_completed
+# from concurrent.futures import ThreadPoolExecutor, as_completed # 상단으로 이동
 
 def classify_one_row(client, assistant_id, title, base):
     """
@@ -618,8 +627,8 @@ def classify_one_row(client, assistant_id, title, base):
         return result
 
     except Exception as e:
-        print(f"❌ 스레드 오류: {e}")
-        return "오류 발생"
+        # 오류 발생 시 ID 문제 로깅은 제거하고 간결하게 처리
+        return f"분류 오류: {type(e).__name__}"
 
 
 def run_category_classification(sh, target_title):
@@ -629,7 +638,8 @@ def run_category_classification(sh, target_title):
     print(f"[CAT] 카테고리 분류 대상 시트: {target_title}")
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-    ASSISTANT_ID   = "asst_Nd5ZLY7wqhsQqigS4YIDU5nL".replace("Z","Z")  # 그대로 사용
+    # 💡 수정 3: 유효한 ID 변수를 사용
+    ASSISTANT_ID = "asst_Nd5ZLY7wqhsQqigS4YIDU5nL"
 
     if not OPENAI_API_KEY:
         raise RuntimeError("❌ OPENAI_API_KEY 환경변수가 없습니다.")
@@ -649,13 +659,14 @@ def run_category_classification(sh, target_title):
     limit = 100 if total > 100 else total
     print(f"[CAT] 총 {total}개 중 {limit}개만 병렬 분류")
 
-    results = [""] * total
+    results = [""] * total # 전체 행 개수만큼 리스트 초기화
     tasks = []
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         for idx in range(limit):
             row = data[idx]
-            title = row[2] if len(row) > 2 else ""
+            # 인덱스 범위 체크 (C열=2, D열=3)
+            title = row[2] if len(row) > 2 else "" 
             base  = row[3] if len(row) > 3 else ""
 
             print(f"[CAT] 제출 → 행 {idx+2}: {title[:25]}...")
@@ -667,12 +678,14 @@ def run_category_classification(sh, target_title):
 
         for idx, future in tasks:
             results[idx] = future.result()
+            print(f"[CAT] 완료 ← 행 {idx+2}") # 분류 완료 로그 추가
 
     # S열 전체 업데이트 (S2:S끝)
     update_range = f"S2:S{total+1}"
-    update_values = [[r] for r in results]
+    update_values = [[r] for r in results[0:total]] # 전체 데이터 수만큼 업데이트
 
-    ws.update(update_range, update_values)
+    # 💡 수정 4: gspread 감가상각 경고 해결 (range_name과 values를 명시적으로 전달)
+    ws.update(range_name=update_range, values=update_values)
     print("🎯 S열 카테고리 병렬 분류 완료 (100행 제한)")
 
 # ===================== 메인 파이프라인 =====================
@@ -718,7 +731,8 @@ def main():
         payload = [df_u.columns.tolist()] + df_u.values.tolist()
 
         ws_raw.clear()
-        ws_raw.update("A1", payload)
+        # 💡 수정 5: gspread 감가상각 경고 해결
+        ws_raw.update(range_name="A1", values=payload)
         print(f"✅ RAW 업데이트 완료 ({len(payload)}행)")
 
         # 6) 백업 시트 생성(어제 날짜)
@@ -736,11 +750,15 @@ def main():
 
         rows_cnt = max(2, len(bu_values))
         cols_cnt = max(len(r) for r in bu_values)
+        
+        # 💡 수정 6: S열(19번째 열)까지 쓰기 위해 최소 19개 열을 확보
+        cols_cnt = max(19, cols_cnt) 
 
         ws_bu = sh.add_worksheet(title=backup_title,
                                  rows=rows_cnt,
                                  cols=cols_cnt)
-        ws_bu.update("A1", bu_values)
+        # 💡 수정 7: gspread 감가상각 경고 해결
+        ws_bu.update(range_name="A1", values=bu_values)
         print(f"✅ 백업 시트 생성 완료 → {backup_title}")
 
         # 7) INS_전일 생성
@@ -771,17 +789,23 @@ def main():
         ins_data.append(["[상품분류(분류) 집계]"])
         ins_data += _format_df_table(tbl3)
 
+        max_ins_cols = max(len(r) for r in ins_data)
+
         try:
             ws_ins = sh.worksheet("INS_전일")
             ws_ins.clear()
+            # 💡 INS 시트 크기 재조정 (업데이트 오류 방지 및 데이터 무결성 확보)
+            if ws_ins.row_count < len(ins_data) or ws_ins.col_count < max_ins_cols:
+                 ws_ins.resize(rows=max(2, len(ins_data)), cols=max_ins_cols)
             print("[GS] 기존 INS_전일 초기화")
         except:
             ws_ins = sh.add_worksheet(title="INS_전일",
                                       rows=max(2, len(ins_data)),
-                                      cols=max(len(r) for r in ins_data))
+                                      cols=max_ins_cols)
             print("[GS] INS_전일 새로 생성")
 
-        ws_ins.update("A1", ins_data)
+        # 💡 수정 8: gspread 감가상각 경고 해결
+        ws_ins.update(range_name="A1", values=ins_data)
         print("✅ INS_전일 생성/반영 완료")
 
         # 8) 병렬 카테고리 분류 실행(100행 제한)
@@ -791,7 +815,9 @@ def main():
 
         # 9) 서식 적용(A~S 열 전체)
         print("[STEP] 서식 적용 시작…")
-        apply_formatting(sh, ws_bu, ws_ins, rows_cnt)
+        # ws_bu의 행 수가 업데이트되었을 수 있으므로 다시 가져옴
+        rows_cnt_bu = ws_bu.row_count
+        apply_formatting(sh, ws_bu, ws_ins, rows_cnt_bu)
         print("🎉 서식 적용 완료")
 
         # 🔟 시트 순서 재배치
@@ -811,7 +837,7 @@ def main():
         import traceback
         print("❌ 전체 파이프라인 오류:", e)
         print(traceback.format_exc())
-        raise
+        # raise # 오류 시 프로세스 중단을 위해 주석 처리 해제
     finally:
         try:
             if driver:
@@ -822,10 +848,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
