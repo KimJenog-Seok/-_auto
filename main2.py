@@ -639,7 +639,7 @@ def run_category_classification(sh, target_title):
 
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     # 💡 수정 3: 유효한 ID 변수를 사용
-    ASSISTANT_ID = "asst_Nd5ZLY7wqhsQqigS4YIDU5nL"
+    ASSISTANT_ID = "asst_Nd5zLY7wqhsQqigS4YIDU5nL"
 
     if not OPENAI_API_KEY:
         raise RuntimeError("❌ OPENAI_API_KEY 환경변수가 없습니다.")
@@ -848,3 +848,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
