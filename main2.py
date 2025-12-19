@@ -216,7 +216,7 @@ def make_yesterday_title_kst():
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).date()
     yday = today - timedelta(days=1)
-    return f"{yday.month}/{yday.day}"
+    return yday.strftime("%y/%m/%d")
 
 def unique_sheet_title(sh, base):
     title = base; n = 1
@@ -299,16 +299,27 @@ def preprocess_dataframe(df_raw, sh):
     print("🧮 데이터 전처리 시작")
     df = df_raw.copy()
 
-    # 방송날짜/시간 분리
+    # preprocess_dataframe 함수 내부의 split_result 처리 부분을 아래로 교체
     split_result = df["방송시간"].str.split("\n", n=1, expand=True)
-    if len(split_result.columns) == 2:
-        df["방송날짜"]      = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
-        df["방송시작시간"] = split_result[1].str.strip()
-    else:
-        df["방송날짜"]      = pd.to_datetime(split_result[0].str.strip(), format="%Y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
-        df["방송시작시간"] = ""
-        print("⚠️ 일부 데이터는 날짜/시간 분리 실패")
 
+    # 💡 요일 제거를 위한 클리닝 함수 추가
+    def clean_date_str(val):
+    if not val: return ""
+    # 정규표현식으로 '숫자.숫자.숫자' 패턴만 추출 (요일 제거)
+    match = re.search(r'(\d{2}\.\d{1,2}\.\d{1,2})', str(val))
+    return match.group(1) if match else val
+
+    if len(split_result.columns) == 2:
+    cleaned_date = split_result[0].apply(clean_date_str)
+    # 💡 %y (소문자 y)를 사용하여 2자리 연도 파싱
+    df["방송날짜"] = pd.to_datetime(cleaned_date, format="%y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
+    df["방송시작시간"] = split_result[1].str.strip()
+    else:
+    # 한 줄로 들어왔을 때를 대비한 예외 처리
+    cleaned_date = split_result[0].apply(clean_date_str)
+    df["방송날짜"] = pd.to_datetime(cleaned_date, format="%y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
+    df["방송시작시간"] = ""
+    
     try:
         day = pd.to_datetime(df["방송날짜"].iloc[0]).date()
     except:
@@ -843,3 +854,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
