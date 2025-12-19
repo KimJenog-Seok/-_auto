@@ -27,7 +27,8 @@ def make_yesterday_title_kst():
     KST = timezone(timedelta(hours=9))
     today = datetime.now(KST).date()
     yday = today - timedelta(days=1)
-    return f"{yday.month}/{yday.day}"  # 예: "11/18"
+    # 💡 수정: 메인 코드와 형식을 맞춤 (25/12/18)
+    return yday.strftime("%y/%m/%d")
 
 
 def find_latest_backup_sheet(sh, base_title):
