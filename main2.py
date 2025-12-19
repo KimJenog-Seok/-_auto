@@ -304,21 +304,21 @@ def preprocess_dataframe(df_raw, sh):
 
     # 💡 요일 제거를 위한 클리닝 함수 추가
     def clean_date_str(val):
-    if not val: return ""
-    # 정규표현식으로 '숫자.숫자.숫자' 패턴만 추출 (요일 제거)
-    match = re.search(r'(\d{2}\.\d{1,2}\.\d{1,2})', str(val))
-    return match.group(1) if match else val
+        if not val: return ""
+        # 정규표현식으로 '숫자.숫자.숫자' 패턴만 추출 (요일 제거)
+        match = re.search(r'(\d{2}\.\d{1,2}\.\d{1,2})', str(val))
+        return match.group(1) if match else val
 
     if len(split_result.columns) == 2:
-    cleaned_date = split_result[0].apply(clean_date_str)
-    # 💡 %y (소문자 y)를 사용하여 2자리 연도 파싱
-    df["방송날짜"] = pd.to_datetime(cleaned_date, format="%y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
-    df["방송시작시간"] = split_result[1].str.strip()
+        cleaned_date = split_result[0].apply(clean_date_str)
+        # 💡 %y (소문자 y)를 사용하여 2자리 연도 파싱
+        df["방송날짜"] = pd.to_datetime(cleaned_date, format="%y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
+        df["방송시작시간"] = split_result[1].str.strip()
     else:
-    # 한 줄로 들어왔을 때를 대비한 예외 처리
-    cleaned_date = split_result[0].apply(clean_date_str)
-    df["방송날짜"] = pd.to_datetime(cleaned_date, format="%y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
-    df["방송시작시간"] = ""
+        # 한 줄로 들어왔을 때를 대비한 예외 처리
+        cleaned_date = split_result[0].apply(clean_date_str)
+        df["방송날짜"] = pd.to_datetime(cleaned_date, format="%y.%m.%d", errors="coerce").dt.strftime("%Y-%m-%d")
+        df["방송시작시간"] = ""
     
     try:
         day = pd.to_datetime(df["방송날짜"].iloc[0]).date()
@@ -854,4 +854,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
