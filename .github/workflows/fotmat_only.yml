@@ -2,8 +2,8 @@ name: Format Only (KST)
 
 on:
   schedule:
-    # 매일 오전 07:30 KST = 22:30 UTC
-    - cron: "30 22 * * *"
+    # 매일 오전 08:35 KST = 전날 23:35 UTC
+    - cron: "35 23 * * *"
   workflow_dispatch:
 
 jobs:
@@ -26,8 +26,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install gspread google-auth google-auth-oauthlib pandas
 
-      - name: Run format_only.py
+      - name: Run format_only.py with Retry
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 20    # 포맷팅 작업이므로 20분이면 충분할 거예요
+          max_attempts: 3        # 실패 시 3번까지 재시도
+          retry_on: error
+          command: python format_only.py
         env:
           KEY1: ${{ secrets.KEY1 }}
-        run: |
-          python format_only.py
