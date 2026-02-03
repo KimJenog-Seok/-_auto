@@ -28,11 +28,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install selenium pandas gspread google-auth google-auth-oauthlib
-          pip install openai   # ⭐ 추가됨
+          pip install openai
 
-      - name: Run main2.py
+      - name: Run main2.py with Retry  # ⭐ 재시도 로직 추가
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10    # 각 시도당 최대 실행 시간
+          max_attempts: 3        # 실패 시 최대 3번까지 재시도
+          retry_on: error        # 에러 발생 시 재시도
+          command: python main2.py
         env:
           KEY1: ${{ secrets.KEY1 }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # ⭐ 추가됨
-        run: |
-          python main2.py
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
