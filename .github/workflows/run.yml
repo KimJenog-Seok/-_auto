@@ -2,8 +2,8 @@ name: Run main2.py daily (KST)
 
 on:
   schedule:
-    # 매일 06:30 KST = 매일 21:30 UTC
-    - cron: "30 21 * * *"
+    # 매일 09:10 KST = 매일 00:10 UTC
+    - cron: "10 0 * * *"
   workflow_dispatch:
 
 jobs:
@@ -30,12 +30,12 @@ jobs:
           pip install selenium pandas gspread google-auth google-auth-oauthlib
           pip install openai
 
-      - name: Run main2.py with Retry  # ⭐ 재시도 로직 추가
+      - name: Run main2.py with Retry
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 10    # 각 시도당 최대 실행 시간
-          max_attempts: 3        # 실패 시 최대 3번까지 재시도
-          retry_on: error        # 에러 발생 시 재시도
+          timeout_minutes: 30    # ⭐ 10분에서 30분으로 대폭 연장 (핵심 수정!)
+          max_attempts: 3        # 실패 시 최대 3번 시도
+          retry_on: error
           command: python main2.py
         env:
           KEY1: ${{ secrets.KEY1 }}
