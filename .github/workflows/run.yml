@@ -2,8 +2,8 @@ name: Run main2.py daily (KST)
 
 on:
   schedule:
-    # 매일 09:10 KST = 매일 00:10 UTC
-    - cron: "10 0 * * *"
+    # 매일 04:04 KST = 매일 19:04 UTC
+    - cron: "4 19 * * *"
   workflow_dispatch:
 
 jobs:
@@ -33,8 +33,8 @@ jobs:
       - name: Run main2.py with Retry
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 30    # ⭐ 10분에서 30분으로 대폭 연장 (핵심 수정!)
-          max_attempts: 3        # 실패 시 최대 3번 시도
+          timeout_minutes: 30    # ⭐ 요청하신 대로 30분 설정
+          max_attempts: 3
           retry_on: error
           command: python main2.py
         env:
