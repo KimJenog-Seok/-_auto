@@ -2,8 +2,8 @@ name: Format Only (KST)
 
 on:
   schedule:
-    # 매일 오전 10:00 KST = 매일 01:00 UTC
-    - cron: "0 1 * * *"
+    # 매일 오전 05:04 KST = 매일 20:04 UTC
+    - cron: "4 20 * * *"
   workflow_dispatch:
 
 jobs:
@@ -32,6 +32,6 @@ jobs:
           timeout_minutes: 20
           max_attempts: 3
           retry_on: error
-          command: python format_only.py  # ⭐ 정확하게 수정됨
+          command: python format_only.py
         env:
           KEY1: ${{ secrets.KEY1 }}
