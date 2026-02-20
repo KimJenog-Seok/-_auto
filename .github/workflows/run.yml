@@ -40,3 +40,13 @@ jobs:
         env:
           KEY1: ${{ secrets.KEY1 }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      # 👇 여기서부터 새로 추가된 부분입니다 👇
+      - name: Upload debug files (Screenshots & HTML)
+        if: always()             # 앞선 실행이 실패하더라도 무조건 실행되게 만듭니다
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files      # 다운로드될 압축파일의 이름입니다
+          path: |
+            *.png
+            *.html
