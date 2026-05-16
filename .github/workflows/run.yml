@@ -33,7 +33,7 @@ jobs:
       - name: Run main2.py with Retry
         uses: nick-fields/retry@v3
         with:
-          timeout_minutes: 30    # ⭐ 요청하신 대로 30분 설정
+          timeout_minutes: 60    # ⭐ 요청하신 대로 60분 설정
           max_attempts: 3
           retry_on: error
           command: python main2.py
